@@ -1,0 +1,10 @@
+Just a simple encrypter / decrypter utility
+
+Use:
+    cantreadthis.py <filename>
+        If this is an encrypted file, will prompt for decryption
+        If this is not an encrypted file, will prompt for encryption
+    
+Data is stored encrypted using AES 256, compressed.
+
+Not suited to hide anything from the government
