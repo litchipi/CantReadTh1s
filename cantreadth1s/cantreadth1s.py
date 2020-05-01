@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 #-*-encoding:utf-8*-
 
+import smaz
+import random
 import argparse
 import sys
 import os
@@ -23,29 +25,33 @@ class CantRead:
         return unpad(AES.new(pwd).decrypt(data))
 
     def compress_data(self, data):
-        return zlib.compress(zlib.compress(data))
+        res = zlib.compress(data)
+        return res
 
     def decompress_data(self, data):
-        return zlib.decompress(zlib.decompress(data))
-
-    def sign_hash(self, h, pwd):
-        return "TODO".encode()
+        res = zlib.decompress(data)
+        return res
 
     def compute_hash(self, data):
         return hashlib.sha256(data).digest()
+
+    def compress_header(self, data):
+        return smaz.compress(data)
+
+    def decompress_header(self, data):
+        return smaz.decompress(data)
 
     def int_to_bytes(self, i):
         return int(i).to_bytes((i.bit_length()//8)+1, "big", signed=False)
 
     def create_header(self, data, pwd):
-        h = self.compute_hash(data).hex()
-        s = self.sign_hash(h, pwd).hex()
+        h = self.compute_hash(data)
         header = {
                 "l":len(data), #DATA LENGTH
-                "s":s, #DATA SIGNATURE
-                "h":h  #DATA HASH
+                "h":h.hex()  #DATA HASH
                 }
-        bin_data = json.dumps(header).replace(" ", "").encode('utf-8')
+        bin_data = self.compress_header(json.dumps(header).replace(" ", ""))
+        print(len(json.dumps(header).replace(" ", "")), len(bin_data), 100*(len(json.dumps(header).replace(" ", ""))/len(bin_data)))
         return self.int_to_bytes(len(bin_data)) + bytes("|".encode()) + bin_data
 
     def test_processed(self, data):
@@ -62,7 +68,7 @@ class CantRead:
             datalen_bin = data.split("|".encode())[0]
             datalen = int.from_bytes(datalen_bin, "big", signed=False)
             header_bin = data[len(datalen_bin)+1:len(datalen_bin)+1+datalen]
-            return json.loads(header_bin.decode("utf-8")), data.replace(data[:len(datalen_bin)+1+datalen], "".encode())
+            return json.loads(self.decompress_header(header_bin)), data.replace(data[:len(datalen_bin)+1+datalen], "".encode())
         except Exception as err:
             return None, data
 
@@ -73,9 +79,6 @@ class CantRead:
         data_hash = self.compute_hash(data).hex()
         if (data_hash != header["h"]):
             return False, "Wrong file hash"
-        hash_sign = self.sign_hash(data_hash, pwd).hex()
-        if (hash_sign != header["s"]):
-            return False, "Wrong file signature"
         data_len = len(data)
         if (data_len != header["l"]):
             return False, "Wrong data length"
@@ -132,6 +135,7 @@ class CantRead:
 
 ###############################################################################
 def test_unit(teststr, dispall=True):
+    import time
     cr = CantRead()
     print("\n"*2)
     if dispall:
@@ -156,7 +160,9 @@ def test_unit(teststr, dispall=True):
     print("Hash of data: " + cr.compute_hash(proc_res).hex())
 
     print("\nRECOVERING" + "-" *50)
+    t = time.time()
     success, loaded = cr.handle_file("testfile.cant_read_this")
+    dt = time.time()-t
     loaded = loaded.decode('utf-8')
     if not success:
         print("Error while recovering the file:\n\t" + loaded)
@@ -169,15 +175,18 @@ def test_unit(teststr, dispall=True):
     print("Hash of data: " + cr.compute_hash(loaded.encode()).hex())
 
     print("Ratio: {}/{} = {}%".format(len(proc_res), len(loaded), round(100*(float(len(proc_res))/len(loaded)), 2)))
+    print("Speed: ")
+    print("\t{}  bytes/s".format(len(loaded)/dt))
+    print("\t{} Kib/s".format((len(loaded)/1024)/dt))
+    print("\t{} Mib/s".format((len(loaded)/(1024*1024))/dt))
 
 def test():
-    import random
     global TESTING
     TESTING = True
 
     test_unit("Super secret password")
     alphabet_n = [chr(i) for i in range(ord("A"), ord("Z"))] + [chr(i) for i in range(ord("a"), ord("z"))] + [chr(i) for i in range(ord("0"), ord("9"))]
-    for n in range(2, 7):
+    for n in range(2, 13):
         test_unit("".join([random.choice(alphabet_n) for i in range(10**n)]), dispall=False)
 
 def main():

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-pip3 install pycrypto
+pip3 install pycrypto smaz-py3
 cwd=$(echo $PWD)
-cd / #Escape direnv HOME redirection (see homesweethome project)
+cd / #Escape direnv $HOME relocalisation (see homesweethome project)
 ln -s $cwd/cantreadth1s/cantreadth1s.py $HOME/.local/bin/cantreadth1s

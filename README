@@ -1,10 +1,24 @@
 Just a simple encrypter / decrypter utility
 
 Use:
-    cantreadthis.py <filename>
+    cantreadthis [--out <fname> --testing] <filename>
         If this is an encrypted file, will prompt for decryption
         If this is not an encrypted file, will prompt for encryption
     
-Data is stored encrypted using AES 256, compressed.
+Data is stored encrypted using AES 256, compressed with zlib.
 
 Not suited to hide anything from the government
+Please mess with it, but don't use it
+
+Exemples:
+    cantreadthis secret_data
+        Will create a file named "secret_data.cant_read_this" processed
+
+    cantreadth1s --out outfile secret_data.cant_read_this
+        Will output to file "outfile" the data recovered from secret_data.cant_read_this
+
+    cantreadthis secret_message.cant_read_this
+        Will print on the screen the data recovered from secret_message.cant_read_this
+
+    cantreadth1s --testing foo
+        Will launch tests on the process (filename doesn't matter)
