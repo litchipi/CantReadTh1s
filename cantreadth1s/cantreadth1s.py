@@ -17,7 +17,7 @@ TESTING = False
 pad = lambda s: s + ((16 - len(s) % 16) * chr(16 - len(s) % 16)).encode()
 unpad = lambda s : s[0:-s[-1]]
 
-class CantRead:
+class CantReadThis:
     def encrypt_data(self, data, pwd):
         return AES.new(pwd).encrypt(pad(data))
 
@@ -51,7 +51,8 @@ class CantRead:
                 "h":h.hex()  #DATA HASH
                 }
         bin_data = self.compress_header(json.dumps(header).replace(" ", ""))
-        print(len(json.dumps(header).replace(" ", "")), len(bin_data), 100*(len(json.dumps(header).replace(" ", ""))/len(bin_data)))
+        if TESTING:
+            print(len(json.dumps(header).replace(" ", "")), len(bin_data), 100*(len(json.dumps(header).replace(" ", ""))/len(bin_data)))
         return self.int_to_bytes(len(bin_data)) + bytes("|".encode()) + bin_data
 
     def test_processed(self, data):
@@ -108,7 +109,9 @@ class CantRead:
             return False, "File doesn't exist"
         with open(fname, "rb") as f:
             data = f.read()
+        return self.handle_data(data, out=out)
 
+    def handle_data(self, data, out=None):
         #PROCESSED FILE TO RECOVER
         if self.test_processed(data):
             res = self.read_processed_data(data)
@@ -136,7 +139,7 @@ class CantRead:
 ###############################################################################
 def test_unit(teststr, dispall=True):
     import time
-    cr = CantRead()
+    cr = CantReadThis()
     print("\n"*2)
     if dispall:
         print("Testing with data: " + teststr)
@@ -195,7 +198,7 @@ def main():
     parser.add_argument('--outfile', '-o', type=str, help='Where to save the recovered data (if nothing is passed, will print it in stdout)')
     parser.add_argument('--testing', '-t', action="store_true", help="Perform tests on the system if set")
 
-    cr = CantRead()
+    cr = CantReadThis()
     args = parser.parse_args()
     if args.testing:
         test()
