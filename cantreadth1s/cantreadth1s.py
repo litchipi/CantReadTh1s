@@ -11,19 +11,26 @@ import json
 import getpass
 import zlib
 from Crypto.Cipher import AES
+import argon2
 
 TESTING = False
 
 pad = lambda s: s + ((16 - len(s) % 16) * chr(16 - len(s) % 16)).encode()
 unpad = lambda s : s[0:-s[-1]]
 
+ARGON2_DEFAULT_CONF = {"t":128, "m":32, "p":8}
+
 class CantReadThis:
+
+    #AES encryption of a block of 16 bytes
     def encrypt_data(self, data, pwd):
         return AES.new(pwd).encrypt(pad(data))
 
     def decrypt_data(self, data, pwd):
         return unpad(AES.new(pwd).decrypt(data))
 
+    
+    #ZLib compression for data (fast & efficient binary compression)
     def compress_data(self, data):
         res = zlib.compress(data)
         return res
@@ -35,34 +42,44 @@ class CantReadThis:
     def compute_hash(self, data):
         return hashlib.sha256(data).digest()
 
+    #Header compressed with smaz, light process for text compression
     def compress_header(self, data):
         return smaz.compress(data)
 
     def decompress_header(self, data):
         return smaz.decompress(data)
 
+
+
     def int_to_bytes(self, i):
         return int(i).to_bytes((i.bit_length()//8)+1, "big", signed=False)
 
-    def create_header(self, data, pwd):
+    #Header format:
+    #   header_length|smaz_compress({dict of header})
+    def create_header(self, data, pwd, argon2_opt):
         h = self.compute_hash(data)
         header = {
                 "l":len(data), #DATA LENGTH
-                "h":h.hex()  #DATA HASH
+                "h":h.hex(),  #DATA HASH
+                "a":argon2_opt
                 }
         bin_data = self.compress_header(json.dumps(header).replace(" ", ""))
         if TESTING:
             print(len(json.dumps(header).replace(" ", "")), len(bin_data), 100*(len(json.dumps(header).replace(" ", ""))/len(bin_data)))
-        return self.int_to_bytes(len(bin_data)) + bytes("|".encode()) + bin_data
+        res = self.int_to_bytes(len(bin_data)) + bytes("|".encode()) + bin_data
+        return res
 
+    #Test if we can extract data from the header
     def test_processed(self, data):
         return (self.extract_header(data)[0] is not None)
 
-    def ask_password(self, prompt):
+    def ask_password(self, prompt, opt=None):
         if TESTING:
             return self.compute_hash("tata".encode())
         else:
-            return self.compute_hash(self.compute_hash(self.compute_hash(self.compute_hash(getpass.getpass(prompt).encode()))))
+            if opt is None:
+                opt = ARGON2_DEFAULT_CONF
+            return argon2.argon2_hash("CantReadTh1s_Password", hashlib.sha256(getpass.getpass(prompt).encode()).digest(), t=opt["t"], m=opt["m"], p=opt["p"], buflen=32), opt
 
     def extract_header(self, data):
         try:
@@ -73,7 +90,7 @@ class CantReadThis:
         except Exception as err:
             return None, data
 
-    def header_check(self, data, pwd):
+    def header_check(self, data):
         header, data = self.extract_header(data)
         if header is None:
             return False, "Header cannot be extracted from file"
@@ -83,11 +100,20 @@ class CantReadThis:
         data_len = len(data)
         if (data_len != header["l"]):
             return False, "Wrong data length"
-        return True, data
+        return True, data, header["a"]
+
+    def byte_to_measure(self, b, nprec=1):
+        i = 0
+        let = ["b", "K", "M", "G", "T", "P"]
+        while b > 1024:
+            b = b/1024
+            i += 1
+        return str(round(b, nprec)) + let[i]
+
 
     def read_processed_data(self, data):
-        pwd = self.ask_password("Enter password for data decryption: ")
-        success, data = self.header_check(data, pwd)
+        success, data, argon2_opt = self.header_check(data)
+        pwd, opt = self.ask_password("Enter password for data decryption: ", opt=argon2_opt)
         if not success: return False, msg
 
         pln_data = self.decrypt_data(data, pwd)
@@ -95,17 +121,24 @@ class CantReadThis:
             dec_data = self.decompress_data(pln_data)
         except zlib.error:
             return False, "Bad password or corrupted backup"
+        
         return True, dec_data
 
     def process_plaindata(self, data, fname):
-        pwd = self.ask_password("Enter password for data encryption: ")
+        pwd, opt = self.ask_password("Enter password for data encryption: ")
         cmp_data = self.compress_data(data)
         enc_data = self.encrypt_data(cmp_data, pwd)
-        data_head= self.create_header(enc_data, pwd)
+        data_head= self.create_header(enc_data, pwd, opt)
         with open(fname + ".cant_read_this", "wb") as f:
             f.write(data_head)
             f.write(enc_data)
-        return True, (data_head + enc_data)
+        
+        src_sz = os.path.getsize(fname)
+        dst_sz = os.path.getsize(fname + ".cant_read_this")
+        ratio = round((float(dst_sz)/src_sz)*100,2)
+
+        print("\nStored securely\n\t" + fname + ".cant_read_this" + "\n\t" + self.byte_to_measure(src_sz) + " -> " + self.byte_to_measure(dst_sz))
+        return True, None 
 
     def handle_file(self, fname, out=None):
         if not os.path.isfile(fname):
