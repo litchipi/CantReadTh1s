@@ -91,7 +91,10 @@ class CantReadThis:
         if not success: return False, msg
 
         pln_data = self.decrypt_data(data, pwd)
-        dec_data = self.decompress_data(pln_data)
+        try:
+            dec_data = self.decompress_data(pln_data)
+        except zlib.error:
+            return False, "Bad password or corrupted backup"
         return True, dec_data
 
     def process_plaindata(self, data, fname):
@@ -109,16 +112,16 @@ class CantReadThis:
             return False, "File doesn't exist"
         with open(fname, "rb") as f:
             data = f.read()
-        return self.handle_data(data, out=out)
+        return self.handle_data(data, fname, out=out)
 
-    def handle_data(self, data, out=None):
+    def handle_data(self, data, fname, out=None):
         #PROCESSED FILE TO RECOVER
         if self.test_processed(data):
             res = self.read_processed_data(data)
             if out is not None:
                 with open(out, "wb") as f:
                     f.write(res[1])
-            elif not TESTING:
+            elif not TESTING and res[0]:
                 self.display_data(res[1])
             return res
 
@@ -128,7 +131,9 @@ class CantReadThis:
 
     def display_data(self, data):
         try:
-            sys.stdout.write(str(data.decode()) + "\n")
+            s = str(data.decode()) + "\n"
+            os.system("clear")
+            sys.stdout.write(s)
         except:
             sys.stdout.write(str(data) + "\n")
             sys.stdout.write(type(data).__name__ + "\n")
