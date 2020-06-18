@@ -31,20 +31,6 @@ This way a corrupted / manipulated data will get detected by the tool and the us
 
 ### Python usage
 The "CantReadThis" class permits any other script to very simply load the tool into an existing project. A very simple example can be seen within the test_script.py file inside this repository.
-```
-import random, string
-from cantreadth1s import CantReadThis
-
-plain_data = ''.join([random.choice(string.printable) for i in range(500)])
-with open("test", "w") as f:
-    f.write(plain_data)
-
-crt = CantReadThis()
-crt.handle_file("test") # Will ask for password and output to a test.cant_read_this file
-
-loaded = crt.handle_file("test.cant_read_this")
-print(loaded == plain_data)
-```
 
 ### Exemples
 ```
