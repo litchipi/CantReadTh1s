@@ -1,4 +1,3 @@
-IP=$3
 # CantReadTh1s
 Just a simple encryption / decryption tool
 
@@ -51,6 +50,13 @@ cantreadthis secret_data
 Will create a file named "secret_data.cant_read_this" processed
 
 ```
+cantreadth1s --info "the password is TATA" secret_data
+```
+Will create the file secret_data.cant_read_this
+When someone will try to decrypt this file with cantreadth1s again, it will display the information
+"the password is TATA". (This is a terrible idea, don't do this)
+
+```
 cantreadth1s --out outfile secret_data.cant_read_this
 ```
 Will output to file "outfile" the data recovered from secret_data.cant_read_this
@@ -59,6 +65,8 @@ Will output to file "outfile" the data recovered from secret_data.cant_read_this
 cantreadthis secret_message.cant_read_this
 ```
 Will print on the screen the data recovered from secret_message.cant_read_this
+
+
 
 ```
 cantreadth1s --testing foo
