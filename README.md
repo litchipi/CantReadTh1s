@@ -24,7 +24,10 @@ A file processed by this tool will get a header containing the data SHA256 hash,
 This way a corrupted / manipulated data will get detected by the tool and the user will be notified.
 
 ### Technical details
-Data is stored encrypted using AES 256, compressed with zlib.
+- Data is stored encrypted using AES 256
+- Data compressed with zlib
+- Header stored in JSON, previously compressed with SMAZ
+- Password Key Derivation with Argon2, with flexible settings (defaults are t=128, m=32, p=8)
 
 ### Python usage
 The "CantReadThis" class permits any other script to very simply load the tool into an existing project:
