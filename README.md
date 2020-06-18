@@ -37,9 +37,7 @@ with open("test", "w") as f:
 crt = CantReadThis()
 crt.handle_file("test") # Will ask for password and output to a test.cant_read_this file
 
-with open("test.cant_read_this", "rb") as f:
-    ld = f.read()
-loaded = crt.handle_data(ld)
+loaded = crt.handle_file("test.cant_read_this")
 print(loaded == plain_data)
 ```
 
@@ -72,3 +70,15 @@ Will print on the screen the data recovered from secret_message.cant_read_this
 cantreadth1s --testing foo
 ```
 Will launch tests (filename doesn't matter)
+
+### TODO plans
+
+In order of priority
+* Non-interactive password prompt (directly from function call)
+* Split file into smaller chunks (and reverse process)
+* Verifications of the tool security
+* Use steganography to store the data inside an image (and reverse process)
+* Split file into smaller chunks inside a list of images by steganography (and reverse process)
+* Optimizing the tool data handling processes (for big files)
+* Benchmarking
+* Adding encryption & compression choices

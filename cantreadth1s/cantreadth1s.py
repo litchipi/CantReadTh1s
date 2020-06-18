@@ -144,21 +144,21 @@ class CantReadThis:
         print("\nStored securely\n\t" + fname + ".cant_read_this" + "\n\t" + self.byte_to_measure(src_sz) + " -> " + self.byte_to_measure(dst_sz))
         return True, None 
 
-    def handle_file(self, fname, out=None, info=None):
+    def handle_file(self, fname, **kwargs):
         if not os.path.isfile(fname):
             return False, "File doesn't exist"
         with open(fname, "rb") as f:
             data = f.read()
-        return self.handle_data(data, fname, out=out, info=info)
+        return self.handle_data(data, fname, **kwargs)
 
-    def handle_data(self, data, fname, out=None, info=None):
+    def handle_data(self, data, fname, out=None, info=None, display=False):
         #PROCESSED FILE TO RECOVER
         if self.test_processed(data):
             res = self.read_processed_data(data)
             if out is not None:
                 with open(out, "wb") as f:
                     f.write(res[1])
-            elif not TESTING and res[0]:
+            if display and res[0]:
                 self.display_data(res[1])
             return res
 
@@ -246,7 +246,7 @@ def main():
     if args.testing:
         test()
     else:
-        success, data = cr.handle_file(args.fname, out=args.outfile, info=args.info)
+        success, data = cr.handle_file(args.fname, out=args.outfile, info=args.info, display=(args.outfile is None))
         if not success:
             print("Failed:\n\t" + data)
 
