@@ -152,6 +152,11 @@ class CantReadThis:
         return self.handle_data(data, fname, **kwargs)
 
     def handle_data(self, data, fname, out=None, info=None, display=False):
+        """
+            out:        path of the file to create and put loaded data in it
+            info:       Informations about the file to store in the header
+            display:    Print to stdout once loaded or not ?
+        """
         #PROCESSED FILE TO RECOVER
         if self.test_processed(data):
             res = self.read_processed_data(data)

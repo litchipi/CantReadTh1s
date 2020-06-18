@@ -30,7 +30,7 @@ This way a corrupted / manipulated data will get detected by the tool and the us
 - Password Key Derivation with Argon2, with flexible settings (defaults are t=128, m=32, p=8)
 
 ### Python usage
-The "CantReadThis" class permits any other script to very simply load the tool into an existing project:
+The "CantReadThis" class permits any other script to very simply load the tool into an existing project. A very simple example can be seen within the test_script.py file inside this repository.
 ```
 import random, string
 from cantreadth1s import CantReadThis
@@ -82,6 +82,7 @@ In order of priority
 * Non-interactive password prompt (directly from function call)
 * Split file into smaller chunks (and reverse process)
 * Verifications of the tool security
+* Comment the code :-(
 * Use steganography to store the data inside an image (and reverse process)
 * Split file into smaller chunks inside a list of images by steganography (and reverse process)
 * Optimizing the tool data handling processes (for big files)
