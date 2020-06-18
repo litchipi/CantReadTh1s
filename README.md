@@ -6,16 +6,18 @@ Please mess with it, but don't use it for anything important
 
 ## Usage:
 ```
-    cantreadth1s [--out <fname> --testing] <filename>
+    cantreadth1s [--info <file info> --out <fname> --testing] <filename>
 ```
-#### If <filename> is an encrypted file:
+#### If \<filename\> is an encrypted file:
+- Will display the information about the file (passed by the --info option when it was created)
 - Will ask password for decryption
 - if --out option is set, will write to the file specified
 - else, will display the result to stdout
 
-#### If <filename> is a non-encrypted file:
+#### If \<filename\> is a non-encrypted file:
 - Will ask password for encryption
-- Will create file <filename>.cant_read_th1s which contains the compressed and encrypted data
+- Will store the information about the file (passed by the --info option, default info is the version of CantReadTh1s used)
+- Will create file \<filename\>.cant_read_th1s which contains the compressed and encrypted data
 
 ### Data verification
 A file processed by this tool will get a header containing the data SHA256 hash, and the length of the data.
