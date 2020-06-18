@@ -13,6 +13,7 @@ import zlib
 from Crypto.Cipher import AES
 import argon2
 
+VERSION = 0.2
 TESTING = False
 
 pad = lambda s: s + ((16 - len(s) % 16) * chr(16 - len(s) % 16)).encode()
@@ -43,10 +44,10 @@ class CantReadThis:
         return hashlib.sha256(data).digest()
 
     #Header compressed with smaz, light process for text compression
-    def compress_header(self, data):
+    def compress_text(self, data):
         return smaz.compress(data)
 
-    def decompress_header(self, data):
+    def decompress_text(self, data):
         return smaz.decompress(data)
 
 
@@ -56,14 +57,16 @@ class CantReadThis:
 
     #Header format:
     #   header_length|smaz_compress({dict of header})
-    def create_header(self, data, pwd, argon2_opt):
+    def create_header(self, data, pwd, argon2_opt, info):
+        if info is None: info = "Processed with CantReadThis v" + str(VERSION)
         h = self.compute_hash(data)
         header = {
                 "l":len(data), #DATA LENGTH
                 "h":h.hex(),  #DATA HASH
-                "a":argon2_opt
+                "a":argon2_opt,
+                "i":info.replace(" ", "_")
                 }
-        bin_data = self.compress_header(json.dumps(header).replace(" ", ""))
+        bin_data = self.compress_text(json.dumps(header).replace(" ", ""))
         if TESTING:
             print(len(json.dumps(header).replace(" ", "")), len(bin_data), 100*(len(json.dumps(header).replace(" ", ""))/len(bin_data)))
         res = self.int_to_bytes(len(bin_data)) + bytes("|".encode()) + bin_data
@@ -86,7 +89,7 @@ class CantReadThis:
             datalen_bin = data.split("|".encode())[0]
             datalen = int.from_bytes(datalen_bin, "big", signed=False)
             header_bin = data[len(datalen_bin)+1:len(datalen_bin)+1+datalen]
-            return json.loads(self.decompress_header(header_bin)), data.replace(data[:len(datalen_bin)+1+datalen], "".encode())
+            return json.loads(self.decompress_text(header_bin)), data.replace(data[:len(datalen_bin)+1+datalen], "".encode())
         except Exception as err:
             return None, data
 
@@ -100,7 +103,7 @@ class CantReadThis:
         data_len = len(data)
         if (data_len != header["l"]):
             return False, "Wrong data length"
-        return True, data, header["a"]
+        return True, data, header
 
     def byte_to_measure(self, b, nprec=1):
         i = 0
@@ -112,8 +115,9 @@ class CantReadThis:
 
 
     def read_processed_data(self, data):
-        success, data, argon2_opt = self.header_check(data)
-        pwd, opt = self.ask_password("Enter password for data decryption: ", opt=argon2_opt)
+        success, data, header = self.header_check(data)
+        print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
+        pwd, opt = self.ask_password("Enter password for data decryption: ", opt=header["a"])
         if not success: return False, msg
 
         pln_data = self.decrypt_data(data, pwd)
@@ -124,11 +128,11 @@ class CantReadThis:
         
         return True, dec_data
 
-    def process_plaindata(self, data, fname):
+    def process_plaindata(self, data, fname, info):
         pwd, opt = self.ask_password("Enter password for data encryption: ")
         cmp_data = self.compress_data(data)
         enc_data = self.encrypt_data(cmp_data, pwd)
-        data_head= self.create_header(enc_data, pwd, opt)
+        data_head= self.create_header(enc_data, pwd, opt, info)
         with open(fname + ".cant_read_this", "wb") as f:
             f.write(data_head)
             f.write(enc_data)
@@ -140,14 +144,14 @@ class CantReadThis:
         print("\nStored securely\n\t" + fname + ".cant_read_this" + "\n\t" + self.byte_to_measure(src_sz) + " -> " + self.byte_to_measure(dst_sz))
         return True, None 
 
-    def handle_file(self, fname, out=None):
+    def handle_file(self, fname, out=None, info=None):
         if not os.path.isfile(fname):
             return False, "File doesn't exist"
         with open(fname, "rb") as f:
             data = f.read()
-        return self.handle_data(data, fname, out=out)
+        return self.handle_data(data, fname, out=out, info=info)
 
-    def handle_data(self, data, fname, out=None):
+    def handle_data(self, data, fname, out=None, info=None):
         #PROCESSED FILE TO RECOVER
         if self.test_processed(data):
             res = self.read_processed_data(data)
@@ -160,7 +164,7 @@ class CantReadThis:
 
         # PLAINDATA FILE TO PROCESS
         else:
-            return self.process_plaindata(data, fname)
+            return self.process_plaindata(data, fname, info)
 
     def display_data(self, data):
         try:
@@ -235,13 +239,14 @@ def main():
     parser.add_argument('fname', metavar='filename', type=str, help="The file you want to process/recover")
     parser.add_argument('--outfile', '-o', type=str, help='Where to save the recovered data (if nothing is passed, will print it in stdout)')
     parser.add_argument('--testing', '-t', action="store_true", help="Perform tests on the system if set")
+    parser.add_argument('--info', '-i', type=str, help='Information about the file, its content or an indication of the password')
 
     cr = CantReadThis()
     args = parser.parse_args()
     if args.testing:
         test()
     else:
-        success, data = cr.handle_file(args.fname, out=args.outfile)
+        success, data = cr.handle_file(args.fname, out=args.outfile, info=args.info)
         if not success:
             print("Failed:\n\t" + data)
 
