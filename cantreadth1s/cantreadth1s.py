@@ -10,7 +10,7 @@ import os
 import hashlib
 import json
 import getpass
-import bz2
+import gzip
 from Crypto.Cipher import AES
 import argon2
 import multiprocessing as mproc
@@ -18,28 +18,31 @@ import multiprocessing as mproc
 VERSION = 0.3
 TESTING = False
 
-pad = lambda s: s + ((16 - len(s) % 16) * chr(16 - len(s) % 16)).encode()
+AES_BS = 16
+pad = lambda s: s + ((AES_BS - len(s) % AES_BS) * chr(AES_BS - len(s) % AES_BS)).encode()
 unpad = lambda s : s[0:-s[-1]]
 
 ARGON2_DEFAULT_CONF = {"t":128, "m":32, "p":8}
-HEADER_SEPARATION_BYTE = bytes.fromhex("00")
+HEADER_SEPARATION_BYTES = bytes.fromhex("005EA7E800")
+HEADER_SEPARATION_BYTES_LEN = len(HEADER_SEPARATION_BYTES)
 
 def open_compressed_file(*args, **kwargs):
-    return bz2.open(*args, **kwargs)
+    kwargs["compresslevel"] = 9
+    return gzip.open(*args, **kwargs)
 
 class CantReadThis:
 
     def __init__(self):
         self.ncpu = mproc.cpu_count()
         self.tmp_file_data = {"filesize":None}
-        self.rsize = (50*1024*1024)
+        self.rsize = (10*1024*1024)
 
     #AES encryption of a block of 16 bytes
     def encrypt_data(self, data, pwd):
-        return AES.new(pwd).encrypt(pad(data))
+        return AES.new(pwd).encrypt(data)
 
     def decrypt_data(self, data, pwd):
-        return unpad(AES.new(pwd).decrypt(data))
+        return AES.new(pwd).decrypt(data)
 
     #Header compressed with smaz, light process for text compression
     def compress_text(self, data):
@@ -56,7 +59,6 @@ class CantReadThis:
     def create_header(self, datahash, pwd, argon2_opt, info):
         if info is None: info = "Processed with CantReadThis v" + str(VERSION)
         header = {
-                "l":self.tmp_file_data["filesize"],
                 "h":datahash,
                 "a":argon2_opt,
                 "i":info.replace(" ", "_")
@@ -64,8 +66,7 @@ class CantReadThis:
         bin_head = self.compress_text(json.dumps(header).replace(" ", ""))
         if TESTING:
             print(len(json.dumps(header).replace(" ", "")), len(bin_head), 100*(len(json.dumps(header).replace(" ", ""))/len(bin_head)))
-        res = self.int_to_bytes(len(bin_head)) + HEADER_SEPARATION_BYTE + bin_head
-        print("DBG> " + str(self.int_to_bytes(len(bin_head))))
+        res = self.int_to_bytes(len(bin_head)) + HEADER_SEPARATION_BYTES + bin_head
         return res
 
     #Test if we can extract data from the header
@@ -83,42 +84,31 @@ class CantReadThis:
     def extract_header(self, dataf):
         n = 0
         dread = None
-        while (dread is None) or (dread != HEADER_SEPARATION_BYTE):
-            dread = dataf.read(1)
-            if len(dread) == 0:
+        while ((dread is None) or (dread != HEADER_SEPARATION_BYTES)):
+            dread = dataf.read(HEADER_SEPARATION_BYTES_LEN)
+            if (len(dread) == 0) or (n >= 10):
                 return None, 0
-            print("DBG> Byte read: " + dread.hex())
             n += 1
-        print("DBG> Headerlen byte end: " + str(n))
+            dataf.seek(n)
         dataf.seek(0)
         headerlen_bin = dataf.read(n-1)
-        print("DBG> Headerlen byte: " + headerlen_bin.hex())
         headerlen = int.from_bytes(headerlen_bin, "big", signed=False)
-        print("DBG> Headerlen: " + str(headerlen))
-        dataf.seek(len(headerlen_bin)+1)
+        dataf.seek(len(headerlen_bin)+HEADER_SEPARATION_BYTES_LEN)
         header_bin = dataf.read(headerlen)
-        print("DBG> Headerbin: " + header_bin.hex())
-        return json.loads(self.decompress_text(header_bin)), len(headerlen_bin)+1+headerlen
+        return json.loads(self.decompress_text(header_bin)), len(headerlen_bin)+HEADER_SEPARATION_BYTES_LEN+headerlen
 
     def compute_hash(self, dataf):
-        n = self.rsize
         h = hashlib.sha256(dataf.read(self.rsize))
-        while (n < self.tmp_file_data["filesize"]):
-            h.update(dataf.read(self.rsize))
+        dataread = dataf.read(self.rsize)
+        while (len(dataread) > 0):
+            h.update(dataread)
+            dataread = dataf.read(self.rsize)
         return h.hexdigest()
 
     def header_check(self, dataf):
         header, data_start = self.extract_header(dataf)
         if header is None:
             return False, -1, "Header cannot be extracted from file"
-        dataf.seek(data_start)
-        data_hash = self.compute_hash(dataf)
-        print("DBG> Datahash: " + data_hash)
-        if (data_hash != header["h"]):
-            return False, -1, "Wrong file hash"
-        data_len = (self.tmp_file_data["filesize"] - data_start)
-        if (data_len != header["l"]):
-            return False, -1, "Wrong data length"
         return True, data_start, header
 
     def byte_to_measure(self, b, nprec=1):
@@ -129,57 +119,85 @@ class CantReadThis:
             i += 1
         return str(round(b, nprec)) + let[i]
 
-    def load_processed_data(self, dataf, data_start, pwd, orig_rsize, fout):
+    def load_processed_data(self, dataf, data_start, pwd, fout):
         with mproc.Pool(self.ncpu) as pool:
-            n = 0
-            fct = lambda d: self.decrypt_data(d, pwd)
             dataf.seek(data_start)
-            while n < self.tmp_file_data["filesize"]:
-                data_chunks = list()
-                for i in range(self.ncpu):
-                    data_chunks.append(dataf.read(self.rsize))
-                    n += self.rsize
-                for r in pool.map(fct, data_chunks):
-                    fout.write(r)
-
-    def load_data(self, dataf, fout, display=False):
-        success, data_start, res = self.header_check(dataf)
-        if not success: return False, res
-        header = res
-        if display:
-            print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
-        pwd, opt = self.ask_password("Enter password for data decryption: ", opt=header["a"])
-        self.load_processed_data(dataf, data_start, pwd, opt["s"], fout)
-        return True, fout
-
-    def process_data(self, dataf, fout, pwd):
-        with mproc.Pool(self.ncpu) as pool:
-            n = 0
-            fct = lambda d: self.encrypt_data(d, pwd)
-            dataf.seek(0)
-            while n < self.tmp_file_data["filesize"]:
+            h = hashlib.sha256()
+            finished = False
+            while not finished:
                 data_chunks = list()
                 for i in range(self.ncpu):
                     data_chunks.append((dataf.read(self.rsize), pwd))
-                    n += self.rsize
-                for r in pool.starmap(self.encrypt_data, data_chunks):
+
+                n = dataf.tell()
+                finished = (dataf.read(4) == "".encode())
+                dataf.seek(n)
+
+                data_chunks = [el for el in data_chunks if len(el[0]) > 0]
+                res = pool.starmap(self.decrypt_data, data_chunks)
+                for n, r in enumerate(res):
+                    if finished and (n == (len(res)-1)):
+                        r = unpad(r)
                     fout.write(r)
+                    h.update(r)
+        return h.hexdigest()
+
+    def process_data(self, dataf, fout, pwd):
+        with mproc.Pool(self.ncpu) as pool:
+            dataf.seek(0)
+            finished = False
+            while not finished:
+                data_chunks = list()
+                for i in range(self.ncpu):
+                    data_chunks.append((dataf.read(self.rsize), pwd))
+
+                n = dataf.tell()
+                finished = (dataf.read(4) == "".encode())
+                dataf.seek(n)
+                data_chunks = [(d, pwd) for d, pwd in data_chunks if len(d) > 0]
+                if finished:
+                    data_chunks[-1] = (pad(data_chunks[-1][0]), pwd)
+                res = pool.starmap_async(self.encrypt_data, data_chunks)
+                for r in res.get():
+                    fout.write(r)
+
+    def load_data(self, dataf, fout, display=False):
+        success, data_start, header = self.header_check(dataf)
+        if not success: return False, header
+        if display:
+            print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
+        pwd, opt = self.ask_password("Enter password for data decryption: ", opt=header["a"])
+        checksum = self.load_processed_data(dataf, data_start, pwd, fout)
+        if (header["h"] != checksum):
+            print(header["h"])
+            print(checksum)
+            return False, "Wrong checksum"
+        return True, fout
+
 
 
     def process_plaindata(self, dataf, fout, info=None, display=False, **kwargs):
         pwd, opt = self.ask_password("Enter password for data encryption: ")
         datahash = self.compute_hash(dataf)
-        print("DBG> Datahash: " +datahash)
         data_head= self.create_header(datahash, pwd, opt, info)
         
         fout.write(data_head)
         self.process_data(dataf, fout, pwd)
         fout.close()
+        print(datahash)
         return True
+
+    def handle_directory(self, fname, rsize=None, ret_data=False, **kwargs):
+        # Zip the whole directory without compression (do not follow symlinks)
+        #   Then process the file
+        return False, "Not implemented yet"
 
     def handle_file(self, fname, rsize=None, ret_data=False, **kwargs):
         if not os.path.isfile(fname):
-            return False, "File doesn't exist"
+            if not os.path.isdir(fname):
+                return False, "File doesn't exist"
+            else:
+                return self.handle_directory(fname, rsize=rsize, ret_data=ret_data, **kwargs)
 
         self.tmp_file_data["filesize"] = os.path.getsize(fname)
         if rsize is not None:
@@ -194,7 +212,6 @@ class CantReadThis:
 
         if processed:
             with open_compressed_file(fname, "rb") as f:
-                print(kwargs)
                 return self.handle_processed_data(f, **kwargs)
         else:
             with open(fname, "rb") as dataf:
@@ -237,8 +254,8 @@ class CantReadThis:
                 pass
 
         if ret_data:
-            return ret
-        return True
+            return True, ret
+        return True, None
 
     def display_data(self, data):
         try:
