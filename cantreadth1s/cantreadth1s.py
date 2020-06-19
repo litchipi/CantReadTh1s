@@ -22,6 +22,7 @@ pad = lambda s: s + ((16 - len(s) % 16) * chr(16 - len(s) % 16)).encode()
 unpad = lambda s : s[0:-s[-1]]
 
 ARGON2_DEFAULT_CONF = {"t":128, "m":32, "p":8}
+HEADER_SEPARATION_BYTE = bytes.fromhex("00")
 
 def open_compressed_file(*args, **kwargs):
     return bz2.open(*args, **kwargs)
@@ -48,7 +49,7 @@ class CantReadThis:
         return smaz.decompress(data)
 
     def int_to_bytes(self, i):
-        return int(i).to_bytes((i.bit_length()//8)+1, "big", signed=False)
+        return int(i).to_bytes((i.bit_length()//8), "big", signed=False)
 
     #Header format:
     #   header_length|smaz_compress({dict of header})
@@ -63,7 +64,8 @@ class CantReadThis:
         bin_head = self.compress_text(json.dumps(header).replace(" ", ""))
         if TESTING:
             print(len(json.dumps(header).replace(" ", "")), len(bin_head), 100*(len(json.dumps(header).replace(" ", ""))/len(bin_head)))
-        res = self.int_to_bytes(len(bin_head)) + self.int_to_bytes(0) + bin_head
+        res = self.int_to_bytes(len(bin_head)) + HEADER_SEPARATION_BYTE + bin_head
+        print("DBG> " + str(self.int_to_bytes(len(bin_head))))
         return res
 
     #Test if we can extract data from the header
@@ -81,14 +83,15 @@ class CantReadThis:
     def extract_header(self, dataf):
         n = 0
         dread = None
-        while (dread is None) or (dread != self.int_to_bytes(0)):
-            help(dataf)
-            dread = dataf.read(size=1)
+        while (dread is None) or (dread != HEADER_SEPARATION_BYTE):
+            dread = dataf.read(1)
+            if len(dread) == 0:
+                return None, 0
             print("DBG> Byte read: " + dread.hex())
             n += 1
         print("DBG> Headerlen byte end: " + str(n))
         dataf.seek(0)
-        headerlen_bin = dataf.read(size=(n-1))
+        headerlen_bin = dataf.read(n-1)
         print("DBG> Headerlen byte: " + headerlen_bin.hex())
         headerlen = int.from_bytes(headerlen_bin, "big", signed=False)
         print("DBG> Headerlen: " + str(headerlen))
@@ -107,14 +110,15 @@ class CantReadThis:
     def header_check(self, dataf):
         header, data_start = self.extract_header(dataf)
         if header is None:
-            return False, "Header cannot be extracted from file"
+            return False, -1, "Header cannot be extracted from file"
         dataf.seek(data_start)
         data_hash = self.compute_hash(dataf)
+        print("DBG> Datahash: " + data_hash)
         if (data_hash != header["h"]):
-            return False, "Wrong file hash"
+            return False, -1, "Wrong file hash"
         data_len = (self.tmp_file_data["filesize"] - data_start)
         if (data_len != header["l"]):
-            return False, "Wrong data length"
+            return False, -1, "Wrong data length"
         return True, data_start, header
 
     def byte_to_measure(self, b, nprec=1):
@@ -139,11 +143,12 @@ class CantReadThis:
                     fout.write(r)
 
     def load_data(self, dataf, fout, display=False):
-        success, data_start, header = self.header_check(dataf)
+        success, data_start, res = self.header_check(dataf)
+        if not success: return False, res
+        header = res
         if display:
             print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
         pwd, opt = self.ask_password("Enter password for data decryption: ", opt=header["a"])
-        if not success: return False, msg
         self.load_processed_data(dataf, data_start, pwd, opt["s"], fout)
         return True, fout
 
@@ -164,6 +169,7 @@ class CantReadThis:
     def process_plaindata(self, dataf, fout, info=None, display=False, **kwargs):
         pwd, opt = self.ask_password("Enter password for data encryption: ")
         datahash = self.compute_hash(dataf)
+        print("DBG> Datahash: " +datahash)
         data_head= self.create_header(datahash, pwd, opt, info)
         
         fout.write(data_head)
@@ -180,12 +186,15 @@ class CantReadThis:
             self.rsize = rsize
         self.rsize = self.rsize-(self.rsize%16)
 
-        with open(fname, "rb") as f:
-            help(f)
-            processed = self.test_processed(f)
+        with open_compressed_file(fname, "rb") as f:
+            try:
+                processed = self.test_processed(f)
+            except OSError:
+                processed = False
 
         if processed:
             with open_compressed_file(fname, "rb") as f:
+                print(kwargs)
                 return self.handle_processed_data(f, **kwargs)
         else:
             with open(fname, "rb") as dataf:
@@ -199,17 +208,19 @@ class CantReadThis:
             if ret_data:
                 with open_compressed_file(fname + ".cant_read_this", "rb") as f:
                     return sucess, f.read()
+            else:
+                return True, ""
 
-    def handle_processed_data(dataf, out=None, display=False, ret_data=False, **kwargs):
+    def handle_processed_data(self, dataf, out=None, display=False, ret_data=False, **kwargs):
         if out is not None:
             res = open(out, "w+b")
         elif display:
-            res = io.BufferedRandom()
+            res = io.BytesIO()
 
         try:
             success, res = self.load_data(dataf, res, display=display)
             if not success:
-                return False
+                return False, res
 
             if display:
                 res.seek(0)
@@ -220,7 +231,10 @@ class CantReadThis:
                 ret = res.read()
 
         finally:
-            res.close()
+            try:
+                res.close()
+            except:
+                pass
 
         if ret_data:
             return ret
@@ -308,7 +322,9 @@ def main():
     if args.testing:
         test()
     else:
-        cr.handle_file(args.fname, out=args.outfile, info=args.info, display=(args.outfile is None))
+        success, res = cr.handle_file(args.fname, out=args.outfile, info=args.info, display=(args.outfile is None))
+        if not success:
+            print(res)
 
 if __name__ == "__main__":
     main()
