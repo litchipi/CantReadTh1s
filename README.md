@@ -65,13 +65,15 @@ Will launch tests (filename doesn't matter)
 ### TODO plans
 
 In order of priority
-* Non-interactive password prompt (directly from function call)
-* Split file into smaller chunks (and reverse process)
+* Compression of data before encryption (if not, compression ~ useless)
+* Fix mutliprocessing & AES encryption
 * Process a whole directory
+* Split file into smaller chunks (and reverse process)
+* Improve speed with Cython
+* Non-interactive password prompt (directly from function call)
 * Verifications of the tool security
 * Comment the code :-(
 * Use steganography to store the data inside an image (and reverse process)
 * Split file into smaller chunks inside a list of images by steganography (and reverse process)
-* Optimizing the tool data handling processes (for big files)
 * Benchmarking
 * Adding encryption & compression choices
