@@ -67,6 +67,7 @@ Will launch tests (filename doesn't matter)
 In order of priority
 * Non-interactive password prompt (directly from function call)
 * Split file into smaller chunks (and reverse process)
+* Process a whole directory
 * Verifications of the tool security
 * Comment the code :-(
 * Use steganography to store the data inside an image (and reverse process)
