@@ -76,12 +76,13 @@ class CantReadThis:
     def test_processed(self, dataf):
         return (self.extract_header(dataf)[0] is not None)
 
-    def ask_password(self, prompt, opt=None):
+    def ask_password(self, prompt, user_opt=None):
         if TESTING:
             return self.compute_hash("tata".encode())
         else:
-            if opt is None:
-                opt = ARGON2_CONF
+            opt = dict.copy(ARGON2_CONF)
+            if user_opt is not None:
+                opt.update(user_opt)
             return hashlib.sha256(argon2.argon2_hash("CantReadTh1s_Password",
                         hashlib.sha256(getpass.getpass(prompt).encode()).digest(), 
                         t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])).digest(), opt
