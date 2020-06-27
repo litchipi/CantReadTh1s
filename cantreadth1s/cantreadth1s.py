@@ -2,27 +2,30 @@
 #-*-encoding:utf-8*-
 
 import io
-import smaz
-import random
-import argparse
-import sys
 import os
-import hashlib
+import sys
+import smaz
+import time
 import json
-import getpass
 import gzip
-from Crypto.Cipher import AES
 import argon2
+import random
+import getpass
+import hashlib
+import argparse
+from Crypto.Cipher import AES
 import multiprocessing as mproc
 
-VERSION = 0.3
+VERSION = 0.4
 TESTING = False
 
 AES_BS = 16
 pad = lambda s: s + ((AES_BS - len(s) % AES_BS) * chr(AES_BS - len(s) % AES_BS)).encode()
 unpad = lambda s : s[0:-s[-1]]
 
-ARGON2_DEFAULT_CONF = {"t":128, "m":32, "p":8}
+ARGON2_DEFAULT_CONF = {"t":2, "m":1024, "p":(mproc.cpu_count()*2), "l":AES_BS}
+ARGON2_CONF = dict.copy(ARGON2_DEFAULT_CONF)
+
 HEADER_SEPARATION_BYTES = bytes.fromhex("005EA7E800")
 HEADER_SEPARATION_BYTES_LEN = len(HEADER_SEPARATION_BYTES)
 
@@ -78,8 +81,10 @@ class CantReadThis:
             return self.compute_hash("tata".encode())
         else:
             if opt is None:
-                opt = ARGON2_DEFAULT_CONF
-            return argon2.argon2_hash("CantReadTh1s_Password", hashlib.sha256(getpass.getpass(prompt).encode()).digest(), t=opt["t"], m=opt["m"], p=opt["p"], buflen=32), opt
+                opt = ARGON2_CONF
+            return hashlib.sha256(argon2.argon2_hash("CantReadTh1s_Password",
+                        hashlib.sha256(getpass.getpass(prompt).encode()).digest(), 
+                        t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])).digest(), opt
 
     def extract_header(self, dataf):
         n = 0
@@ -166,6 +171,7 @@ class CantReadThis:
         if not success: return False, header
         if display:
             print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
+            print("\n\t" + ",\n\t".join([str(k) + ": " + str(v) for k, v in header.items()]) + "\n")
         pwd, opt = self.ask_password("Enter password for data decryption: ", opt=header["a"])
         checksum = self.load_processed_data(dataf, data_start, pwd, fout)
         if (header["h"] != checksum):
@@ -184,7 +190,6 @@ class CantReadThis:
         fout.write(data_head)
         self.process_data(dataf, fout, pwd)
         fout.close()
-        print(datahash)
         return True
 
     def handle_directory(self, fname, rsize=None, ret_data=False, **kwargs):
@@ -267,81 +272,72 @@ class CantReadThis:
             sys.stdout.write(type(data).__name__ + "\n")
         sys.stdout.flush()
 
-
-
-###############################################################################
-def test_unit(teststr, dispall=True):
-    print("Not implemented")
-    return
-    import time
-    cr = CantReadThis()
-    print("\n"*2)
-    if dispall:
-        print("Testing with data: " + teststr)
-    else:
-        print("Testing with data: " + teststr[:10] + "...")
-    print("Data length: " + str(len(teststr)))
-    print("Hash of data: " + cr.compute_hash(teststr.encode()).hex())
-    with open("testfile", "w") as fichier:
-        fichier.write(teststr)
-
-    print("\nPROCESSING" + "-" * 50)
-    success, proc_res = cr.handle_file("testfile")
-    if not success:
-        print("Error while processing the file:\n\t" + proc_res)
-        return
-    if dispall:
-        print("Result: " + str(proc_res))
-    else:
-        print("Result: " + str(proc_res[:10]) + "...")
-    print("Data length: " + str(len(proc_res)))
-    print("Hash of data: " + cr.compute_hash(proc_res).hex())
-
-    print("\nRECOVERING" + "-" *50)
+def benchmark():
+    opt = dict.copy(ARGON2_CONF)
     t = time.time()
-    success, loaded = cr.handle_file("testfile.cant_read_this")
-    dt = time.time()-t
-    loaded = loaded.decode('utf-8')
-    if not success:
-        print("Error while recovering the file:\n\t" + loaded)
-        return
-    if dispall:
-        print("Result: " + loaded)
+    res = argon2.argon2_hash("CantReadTh1s_Password",
+            hashlib.sha256("tata".encode()).digest(), t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])
+    dt = time.time() - t
+    return dt
+
+def find_best_parameters_fit(t):
+    n = 1
+    init = True
+    oldres = 0; res = 0
+    while init or (res < t):
+        oldres = res
+        res = benchmark()
+        n += 1
+        change_security_level(n)
+        init = False
+
+    if (abs(t-res) < abs(t-oldres)):
+        return n-1
     else:
-        print("Result: " + loaded[:10] + "...")
-    print("Data length: " + str(len(loaded)))
-    print("Hash of data: " + cr.compute_hash(loaded.encode()).hex())
+        return n-2
 
-    print("Ratio: {}/{} = {}%".format(len(proc_res), len(loaded), round(100*(float(len(proc_res))/len(loaded)), 2)))
-    print("Speed: ")
-    print("\t{}  bytes/s".format(len(loaded)/dt))
-    print("\t{} Kib/s".format((len(loaded)/1024)/dt))
-    print("\t{} Mib/s".format((len(loaded)/(1024*1024))/dt))
-
-def test():
-    global TESTING
-    TESTING = True
-
-    test_unit("Super secret password")
-    alphabet_n = [chr(i) for i in range(ord("A"), ord("Z"))] + [chr(i) for i in range(ord("a"), ord("z"))] + [chr(i) for i in range(ord("0"), ord("9"))]
-    for n in range(2, 13):
-        test_unit("".join([random.choice(alphabet_n) for i in range(10**n)]), dispall=False)
+def change_security_level(level):
+    #"t":2, "m":1024, "p":(mproc.cpu_count()*2)
+    global ARGON2_DEFAULT_CONF
+    ARGON2_CONF["t"] = ARGON2_DEFAULT_CONF["t"] + ((level-1)*2)
+    ARGON2_CONF["m"] = ARGON2_DEFAULT_CONF["m"] + ((level-1)*256)
+    ARGON2_CONF["l"] = ARGON2_DEFAULT_CONF["l"] + ((level-1)*AES_BS)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('fname', metavar='filename', type=str, help="The file you want to process/recover")
     parser.add_argument('--outfile', '-o', type=str, help='Where to save the recovered data (if nothing is passed, will print it in stdout)')
-    parser.add_argument('--testing', '-t', action="store_true", help="Perform tests on the system if set")
     parser.add_argument('--info', '-i', type=str, help='Information about the file, its content or an indication of the password')
+    parser.add_argument('--security-level', '-l', type=int,
+            help='Security level to use, changes the parameters of the password derivation function. Can go to infinite, default is 1.', default=1)
+    parser.add_argument('--find-parameters', '-f', help='Tests the parameters needed to get the given execution time (in ms)', type=int)
 
     cr = CantReadThis()
     args = parser.parse_args()
-    if args.testing:
-        test()
-    else:
-        success, res = cr.handle_file(args.fname, out=args.outfile, info=args.info, display=(args.outfile is None))
-        if not success:
-            print(res)
+
+    if args.find_parameters is not None:
+        res = list()
+        while True:
+            try:
+                change_security_level(1)
+                res.append(find_best_parameters_fit(args.find_parameters/1000))
+                avg = round(sum(res)/len(res), 0)
+                change_security_level(avg)
+                sys.stdout.write("\033[2K\r")
+                sys.stdout.write("(CTRL+C to stop) ")
+                sys.stdout.write("Best level to fit: " + str(avg))
+                sys.stdout.write(" | ")
+                sys.stdout.write(", ".join([str(key) + ": " + str(val) for key, val in ARGON2_CONF.items()]) + "\t")
+                sys.stdout.flush()
+            except KeyboardInterrupt:
+                break
+        print("\nDone\n")
+        return
+
+    change_security_level(args.security_level)
+    success, res = cr.handle_file(args.fname, out=args.outfile, info=args.info, display=(args.outfile is None))
+    if not success:
+        print(res)
 
 if __name__ == "__main__":
     main()
