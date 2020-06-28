@@ -38,35 +38,14 @@ HEADER_SEPARATION_BYTES = bytes.fromhex("005EA7E800")
 HEADER_SEPARATION_BYTES_LEN = len(HEADER_SEPARATION_BYTES)
 
 RSIZE = (10*1024*1024)
-
-WBITS = zlib.MAX_WBITS
-#COMPRESSOR = zlib.compressobj(level=9, wbits = WBITS)
-#DECOMPRESSOR = zlib.decompressobj(wbits = WBITS)
-ZLIB_FLUSH_MODE = zlib.Z_SYNC_FLUSH
-AES_HANDLER = None
-
-
-#COMPRESSOR = bz2.BZ2Compressor()
-#DECOMPRESSOR = bz2.BZ2Decompressor()
-
-
-class C:
-    def compress(self, d):
-#        return bz2.compress(d)
-        return d
-
-class D:
-    def decompress(self, d):
-#        return bz2.decompress(d)
-        return d
-
+ENCRYPTION_HANDLER = None
 COMPRESSOR = None
 DECOMPRESSOR = None
 def init_compress():
     global COMPRESSOR
     global DECOMPRESSOR
-    COMPRESSOR   = lzma.LZMACompressor()#zlib.compressobj()#lz4.frame.LZ4FrameCompressor(block_linked=False, auto_flush=False)
-    DECOMPRESSOR = lzma.LZMADecompressor()#zlib.decompressobj()#lz4.frame.LZ4FrameDecompressor()
+    COMPRESSOR   = lzma.LZMACompressor()
+    DECOMPRESSOR = lzma.LZMADecompressor()
 
 def test():
     cr = CantReadThis()
@@ -88,17 +67,20 @@ def test():
     print(sum([len(el) for el in f]), len(data)*1000)
 
 class CantReadThis:
-    def __init__(self):
+    def __init__(self, preset_pwd=None):
         self.ncpu = mproc.cpu_count()
         self.tmp_file_data = {"filesize":None}
         self.rsize = RSIZE
         self.crumbs = dict()
         self.databuff = bytes()
+        self.preset_pwd = None
+        if preset_pwd is not None:
+            self.preset_pwd = self.process_pwd(preset_pwd, ARGON2_CONF)[0]
 
     #AES encryption of a block of 16 bytes
     def setup_aes_handler(self, pwd):
-        global AES_HANDLER
-        AES_HANDLER = AES.new(pwd)
+        global ENCRYPTION_HANDLER
+        ENCRYPTION_HANDLER = AES.new(pwd)
 
     def prepare_datachunks(self, bytelist, bs=1):
         buff = self.databuff + "".encode().join(bytelist)
@@ -118,20 +100,22 @@ class CantReadThis:
         return res
 
     def compress_datachunk(self, data):
-#        return gzip.compress(data)
-#        return COMPRESSOR.compress(data)
         return COMPRESSOR.compress(data)
 
     def decompress_datachunk(self, data):
-#        return gzip.decompress(data)
-#        return DECOMPRESSOR.decompress(data)
         return DECOMPRESSOR.decompress(data)
 
-    def encrypt_datachunk(self, data):
-        return AES_HANDLER.encrypt(data)
+    def encrypt_datachunk(self, data, n=0):
+        if n == SECURITY_LEVEL:
+            return data
+        else:
+            return ENCRYPTION_HANDLER.encrypt(self.encrypt_datachunk(data, n=n+1))
 
-    def decrypt_datachunk(self, data):
-        return AES_HANDLER.decrypt(data)
+    def decrypt_datachunk(self, data, n=0):
+        if n == SECURITY_LEVEL:
+            return data
+        else:
+            return ENCRYPTION_HANDLER.decrypt(self.decrypt_datachunk(data, n=n+1))
 
     #Header compressed with smaz, light process for text compression
     def compress_text(self, data):
@@ -145,7 +129,7 @@ class CantReadThis:
 
     #Header format:
     #   header_length|smaz_compress({dict of header})
-    def create_header(self, datahash, pwd, argon2_opt, info):
+    def create_header(self, datahash, argon2_opt, info):
         if info is None: info = "Processed with CantReadThis v" + str(VERSION)
         header = {
                 "h":datahash,
@@ -164,15 +148,15 @@ class CantReadThis:
         return (self.extract_header(dataf)[0] is not None)
 
     def ask_password(self, prompt, user_opt=None):
-        if TESTING:
-            return self.compute_hash("tata".encode())
-        else:
-            opt = dict.copy(ARGON2_CONF)
-            if user_opt is not None:
-                opt.update(user_opt)
-            return hashlib.sha3_256(argon2.argon2_hash("CantReadTh1s_Password",
-                        hashlib.sha256(getpass.getpass(prompt).encode()).digest(), 
-                        t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])).digest(), opt
+        opt = dict.copy(ARGON2_CONF)
+        if user_opt is not None:
+            opt.update(user_opt)
+        return self.process_pwd(getpass.getpass(prompt), opt)
+
+    def process_pwd(self, pwd, opt):
+        return hashlib.sha3_256(argon2.argon2_hash("CantReadTh1s_Password",
+                    hashlib.sha256(pwd.encode()).digest(),
+                    t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])).digest(), opt
 
     def extract_header(self, dataf):
         n = 0
@@ -215,7 +199,7 @@ class CantReadThis:
     def debug_data(self, data, name):
         pass#print(name, hashlib.sha256("".encode().join(data)).hexdigest())
 
-    def load_processed_data(self, dataf, data_start, pwd, fout):
+    def load_processed_data(self, dataf, data_start, fout):
         with mproc.Pool(self.ncpu) as pool:
             dataf.seek(data_start)
             h = hashlib.sha256()
@@ -238,10 +222,8 @@ class CantReadThis:
                 decres = pool.starmap_async(self.decrypt_datachunk, data_chunks).get()
                 if finished:
                     decres.append(unpad(self.decrypt_datachunk(*last_dc)))
-                self.debug_data(decres, "dec")  #OK
                 dmp_chunks = [(d,) for d in self.prepare_datachunks(decres)]
 
-                self.debug_data([el[0] for el in dmp_chunks], "dmp")
                 res = list()
                 for n, d in enumerate(dmp_chunks):
                     res.append(self.decompress_datachunk(*d))
@@ -249,10 +231,9 @@ class CantReadThis:
                 for n, r in enumerate(res):
                     fout.write(r)
                     h.update(r)
-                print("")
         return h.hexdigest()
 
-    def process_data(self, dataf, fout, pwd):
+    def process_data(self, dataf, fout):
         with mproc.Pool(self.ncpu) as pool:
             dataf.seek(0)
             h = hashlib.sha256()
@@ -272,6 +253,7 @@ class CantReadThis:
                 cmpres = list()
                 for n, d in enumerate(data_chunks):
                     cmpres.append(self.compress_datachunk(*d))
+#                cmpres = pool.starmap_async(self.compress_datachunk, data_chunks).get()
                 cmp_chunks = [(d,) for d in self.prepare_datachunks(cmpres, bs=AES_BS)]
                 res = pool.starmap_async(self.encrypt_datachunk, cmp_chunks).get()          #Encryption
 
@@ -282,7 +264,6 @@ class CantReadThis:
                 for r in res:
                     fout.write(r)
                     h.update(r)
-                print("")
         return h.hexdigest()
 
     def load_data(self, dataf, fout, display=False):
@@ -292,9 +273,12 @@ class CantReadThis:
         if display:
             print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
             print("\n\t" + ",\n\t".join([str(k) + ": " + str(v) for k, v in header.items()]) + "\n")
-        pwd, opt = self.ask_password("Enter password for data decryption: ", user_opt=header["a"])
+        if self.preset_pwd is None:
+            pwd, opt = self.ask_password("Enter password for data decryption: ", user_opt=header["a"])
+        else:
+            pwd = self.preset_pwd
         self.setup_aes_handler(pwd)
-        checksum = self.load_processed_data(dataf, data_start, pwd, fout)
+        checksum = self.load_processed_data(dataf, data_start, fout)
         if (header["h"] != checksum):
             print(header["h"])
             print(checksum)
@@ -302,20 +286,25 @@ class CantReadThis:
         return True, fout
 
     def process_plaindata(self, dataf, fout, info=None, display=False, **kwargs):
-        pwd, opt = self.ask_password("Enter password for data encryption: ")
+        if self.preset_pwd is None:
+            pwd, opt = self.ask_password("Enter password for data encryption: ")
+        else:
+            pwd = self.preset_pwd
+            opt = ARGON2_CONF
         self.setup_aes_handler(pwd)
         datahash = self.compute_hash(dataf)
-        data_head= self.create_header(datahash, pwd, opt, info)
+        data_head= self.create_header(datahash, opt, info)
         
         fout.write(data_head)
         try:
-            checksum = self.process_data(dataf, fout, pwd)
+            checksum = self.process_data(dataf, fout)
         except:
             traceback.print_exc(file=sys.stdout)
             sys.exit(0)
         finally:
             fout.close()
-        print(checksum)
+        if display:
+            print(checksum)
         return True
 
     def handle_directory(self, fname, rsize=None, ret_data=False, **kwargs):
@@ -399,23 +388,30 @@ class CantReadThis:
         sys.stdout.flush()
 
 def benchmark():
-    opt = dict.copy(ARGON2_CONF)
+    d = io.BytesIO(os.urandom(500))
+    o = io.BytesIO()
     t = time.time()
-    res = argon2.argon2_hash("CantReadTh1s_Password",
-            hashlib.sha256("tata".encode()).digest(), t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])
+    crt = CantReadThis(preset_pwd="password")
+    crt.process_plaindata(d, o)
     dt = time.time() - t
     return dt
 
 def find_best_parameters_fit(t):
     n = SECURITY_LEVEL
     init = True
-    oldres = 0; res = 0
+    oldres = 0; res = 0; msg=""
+    print("")
     while init or (res < t):
         oldres = res
         res = benchmark()
+        msg = ("\b"*len(msg))
+        msg += "Level " + str(n) + ": " + str(int(res*1000)) + "ms"
+        sys.stdout.write(msg)
+
         n += 1
         change_security_level(n)
         init = False
+        time.sleep(0.25)
 
     if (abs(t-res) < abs(t-oldres)):
         return n-1
@@ -423,7 +419,6 @@ def find_best_parameters_fit(t):
         return n-2
 
 def change_security_level(level):
-    #"t":2, "m":1024, "p":(mproc.cpu_count()*2)
     global SECURITY_LEVEL
     global ARGON2_DEFAULT_CONF
     SECURITY_LEVEL = int(level)
@@ -433,7 +428,7 @@ def change_security_level(level):
 
 def fit_parameters(t):
     res = list()
-    print("Starting parameters fitting to reach a hashing time of " + str(t) + " ms")
+    print("Starting parameters fitting to reach a process time of " + str(t) + " ms")
     n = 0; avg=0
     while True:
         try:
@@ -442,7 +437,7 @@ def fit_parameters(t):
             n += 1
             avg = int(round(sum(res)/len(res), 0))
             change_security_level(avg)
-            sys.stdout.write("\033[2K\r")
+            sys.stdout.write("\033[1A\033[2K\r")
             sys.stdout.write("(CTRL+C to stop) ")
             sys.stdout.write(str(n) + " iterations done | ")
             sys.stdout.write("Best level to fit: " + str(avg) + " | ")
