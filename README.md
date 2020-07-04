@@ -46,9 +46,10 @@ This way a corrupted / manipulated data will get detected by the tool and the us
 
 ### Technical details
 - Data is stored encrypted using AES 256
-- Data compressed with zlib
+- Data compressed with LZMA
 - Header stored in JSON, previously compressed with SMAZ
 - Password Key Derivation with Argon2, with flexible settings (defaults are t=2, m=1024, p=Number of CPU x2)
+On an AMD Ryzen 5 3600X, processes rockyou.txt in 55 secs, compressed from 134M to 36.9M.
 
 ### Security levels
 To fit particular needs, the tool can be used with different levels of security that can be added to the default minimal settings for more security.
@@ -60,7 +61,7 @@ Will process the file \<file\> with a level of security of 50.
 ```
     cantreadth1s -f 500 <dummyfile>
 ```
-Will find the maximal security parameters allowing to get ~ 500ms of password hashing time
+Will find the maximal security parameters in order to reach get ~500 ms/Kib of data processing time.
 
 ### Python usage
 The "CantReadThis" class permits any other script to very simply load the tool into an existing project. A very simple example can be seen within the test_script.py file inside this repository.

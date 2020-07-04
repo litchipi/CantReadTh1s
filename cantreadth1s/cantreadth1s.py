@@ -9,10 +9,7 @@ import time
 import math
 import json
 
-import gzip
-import zlib
 import lzma
-import lz4.frame
 
 import argon2
 import random
@@ -119,13 +116,15 @@ class CantReadThis:
 
     #Header compressed with smaz, light process for text compression
     def compress_text(self, data):
-        return smaz.compress(data)
+        return data.encode()
+#        return smaz.compress(data)
 
     def decompress_text(self, data):
-        return smaz.decompress(data)
+        return data.decode()
+#        return smaz.decompress(data)
 
     def int_to_bytes(self, i):
-        return int(i).to_bytes((i.bit_length()//8), "big", signed=False)
+        return int(i).to_bytes((i.bit_length()//8)+1, "big", signed=False)
 
     #Header format:
     #   header_length|smaz_compress({dict of header})
@@ -279,7 +278,7 @@ class CantReadThis:
             pwd = self.preset_pwd
         self.setup_aes_handler(pwd)
         checksum = self.load_processed_data(dataf, data_start, fout)
-        if (header["h"] != checksum):
+        if (header["h"] != checksum[:8]):
             print(header["h"])
             print(checksum)
             return False, "Wrong checksum"
@@ -292,7 +291,7 @@ class CantReadThis:
             pwd = self.preset_pwd
             opt = ARGON2_CONF
         self.setup_aes_handler(pwd)
-        datahash = self.compute_hash(dataf)
+        datahash = self.compute_hash(dataf)[:8]
         data_head= self.create_header(datahash, opt, info)
         
         fout.write(data_head)
@@ -388,13 +387,18 @@ class CantReadThis:
         sys.stdout.flush()
 
 def benchmark():
-    d = io.BytesIO(os.urandom(500))
-    o = io.BytesIO()
-    t = time.time()
-    crt = CantReadThis(preset_pwd="password")
-    crt.process_plaindata(d, o)
-    dt = time.time() - t
-    return dt
+    res = list()
+    n = 1
+    d = io.BytesIO(os.urandom(1024*n))
+    for i in range(20):
+        d.seek(0)
+        o = io.BytesIO()
+        t = time.time()
+        crt = CantReadThis(preset_pwd="password")
+        crt.process_plaindata(d, o)
+        dt = time.time() - t
+        res.append(dt/n)
+    return sum(res)/len(res)
 
 def find_best_parameters_fit(t):
     n = SECURITY_LEVEL
@@ -405,7 +409,7 @@ def find_best_parameters_fit(t):
         oldres = res
         res = benchmark()
         msg = ("\b"*len(msg))
-        msg += "Level " + str(n) + ": " + str(int(res*1000)) + "ms"
+        msg += "Level " + str(n) + ": " + str(round(res*1000, 5)) + "ms" + " "*5
         sys.stdout.write(msg)
 
         n += 1
@@ -428,7 +432,7 @@ def change_security_level(level):
 
 def fit_parameters(t):
     res = list()
-    print("Starting parameters fitting to reach a process time of " + str(t) + " ms")
+    print("Starting parameters fitting to reach a process time of " + str(t) + " ms / Kib")
     n = 0; avg=0
     while True:
         try:
@@ -455,7 +459,7 @@ def main():
     parser.add_argument('--info', '-i', type=str, help='Information about the file, its content or an indication of the password')
     parser.add_argument('--security-level', '-l', type=int,
             help='Security level to use, changes the parameters of the password derivation function. Can go to infinite, default is 1.', default=1)
-    parser.add_argument('--find-parameters', '-f', help='Tests the parameters needed to get the given execution time (in ms)', type=int)
+    parser.add_argument('--find-parameters', '-f', help='Tests the parameters needed to get the given execution time (in ms / Kib)', type=int)
 
     cr = CantReadThis()
     args = parser.parse_args()
