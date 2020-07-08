@@ -1,15 +1,12 @@
 # CantReadTh1s
-Just a simple encryption / decryption tool
+Just a simple encrypted backup tool, provides encryption and compression of data.
 
-Not suited for real cryptographic security.
+For now, not yet secured for real cryptographic security.
 Please mess with it, but don't use it for anything important
 
 ## Usage:
 ```
-       cantreadth1s [-h] [--outfile OUTFILE] [--info INFO]
-                    [--security-level SECURITY_LEVEL]
-                    [--find-parameters FIND_PARAMETERS]
-                    filename
+usage: cantreadth1s [-h] [--outfile OUTFILE] [--display-only] [--info INFO] [--security-level SECURITY_LEVEL] [--find-parameters FIND_PARAMETERS] [--compression-algorithm {lzma,bz2,zlib,lz4,none}] [--verbose] [--password PASSWORD] filename
 
 positional arguments:
   filename              The file you want to process/recover
@@ -17,41 +14,41 @@ positional arguments:
 optional arguments:
   -h, --help            show this help message and exit
   --outfile OUTFILE, -o OUTFILE
-                        Where to save the recovered data (if nothing is
-                        passed, will print it in stdout)
-  --info INFO, -i INFO  Information about the file, its content or an
-                        indication of the password
+                        Where to save the recovered data
+  --display-only, -d    Print result to stdout and do not write to file
+  --info INFO, -i INFO  Information about the file, its content or an indication of the password
   --security-level SECURITY_LEVEL, -l SECURITY_LEVEL
-                        Security level to use, changes the parameters of the
-                        password derivation function. Can go to infinite,
-                        default is 1.
+                        Security level to use, changes the parameters of the password derivation function. Can go to infinite, default is 1.
   --find-parameters FIND_PARAMETERS, -f FIND_PARAMETERS
-                        Tests the parameters needed to get the given execution
-                        time (in ms)
+                        Tests the parameters needed to get the given execution time (in ms / Kib)
+  --compression-algorithm {lzma,bz2,zlib,lz4,none}, -c {lzma,bz2,zlib,lz4,none}
+                        The compression algorithm to use to process the data
+  --verbose, -v         Display informations about the file and the process
+  --password PASSWORD, -p PASSWORD
+                        Password to use
 ```
 #### If \<filename\> is an encrypted file:
 - Will display the information about the file (passed by the --info option when it was created)
 - Will ask password for decryption
-- if --out option is set, will write to the file specified
-- else, will display the result to stdout
+- If --display is set, will display the result to stdout, else will output to file
 
 #### If \<filename\> is a non-encrypted file:
 - Will ask password for encryption
 - Will store the information about the file (passed by the --info option, default info is the version of CantReadTh1s used)
-- Will create file \<filename\>.cant_read_th1s which contains the compressed and encrypted data
+- Will create file \<filename\>.cant_read_this which contains the compressed and encrypted data
 
 ### Data verification
-A file processed by this tool will get a header containing the data SHA256 hash, and the length of the data.
+A file processed by this tool will get a header containing a portion of the SHA256 hash, and the length of the data.
 This way a corrupted / manipulated data will get detected by the tool and the user will be notified.
 
 ### Technical details
 - Data is stored encrypted using AES 256
-- Data compressed with LZMA
-- Header stored in JSON, previously compressed with SMAZ
+- Data compressed by default with Zlib
+- Header stored in JSON
 - Password Key Derivation with Argon2, with flexible settings (defaults are t=2, m=1024, p=Number of CPU x2)
-On an AMD Ryzen 5 3600X, processes rockyou.txt in 55 secs, compressed from 134M to 36.9M.
+On an AMD Ryzen 5 3600X (6 cores), processes rockyou.txt in 40 secs, compressed from 134M to 50.8M.
 
-### Security levels
+### Security levels
 To fit particular needs, the tool can be used with different levels of security that can be added to the default minimal settings for more security.
 This affects the password derivation function (Argon2 hash) parameters, but may affect other aspects too as the tool gets developped.
 ```
@@ -85,30 +82,35 @@ cantreadth1s --out outfile secret_data.cant_read_this
 Will output to file "outfile" the data recovered from secret_data.cant_read_this
 
 ```
-cantreadthis secret_message.cant_read_this
+cantreadthis --display secret_message.cant_read_this
 ```
 Will print on the screen the data recovered from secret_message.cant_read_this
 
-
+```
+cantreadthis --compression-algorithm bz2 secret_message
+```
+Will use the bz2 compression algorithm to process the data
 
 ```
-cantreadth1s --testing foo
+cantreadthis ./secret_directory/
 ```
-Will launch tests (filename doesn't matter)
+Will process the directory ./secret_directory/, putting any file inside it (will ignore symlinks) to a zipfile, and then treat the zipfile. 
+Will create a file called secret_directory_zipfile.cant_read_this
+```
+cantreadthis ./secret_directory_zipfile.cant_read_this
+```
+Will load the processed directory zipfile, then will extract the zipfile to the current directory
 
 ### TODO plans
-
 In order of priority
-* Compression of data before encryption (if not, compression ~ useless)
-* Fix mutliprocessing & AES encryption
-* Process a whole directory
-* Split file into smaller chunks (and reverse process)
+* Improve Python class usability for usage inside other projects
+* Split processed file into smaller chunks (and reverse process)
 * Improve speed with Cython
-* Non-interactive password prompt (directly from function call)
 * Verifications of the tool security
 * Very simple GUI tool for non-cli users
 * Comment the code :-(
 * Use steganography to store the data inside an image (and reverse process)
 * Split file into smaller chunks inside a list of images by steganography (and reverse process)
+* Adding encryption choices
+* Multiprocessing on compression
 * Better benchmarking functions
-* Adding encryption & compression choices
