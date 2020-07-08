@@ -9,7 +9,12 @@ import time
 import math
 import json
 
+import zipfile
 import lzma
+import bz2
+import zlib
+import brotli
+import lz4.frame
 
 import argon2
 import random
@@ -20,7 +25,7 @@ import traceback
 from Crypto.Cipher import AES
 import multiprocessing as mproc
 
-VERSION = 0.4
+VERSION = 0.5
 TESTING = False
 
 AES_BS = 16
@@ -38,11 +43,60 @@ RSIZE = (10*1024*1024)
 ENCRYPTION_HANDLER = None
 COMPRESSOR = None
 DECOMPRESSOR = None
-def init_compress():
+
+class LZ4Wrapper:
+    def __init__(self, compress):
+        self.beginned = False
+        if compress:
+            #self.obj = lz4.stream.LZ4StreamCompressor(strat, buffsize)
+            self.obj = lz4.frame.LZ4FrameCompressor()
+        else:
+            #self.obj = lz4.stream.LZ4StreamDecompressor(strat, buffsize)
+            self.obj = lz4.frame.LZ4FrameDecompressor()
+    def compress(self, data):
+        if not self.beginned:
+            self.beginned = True
+            return self.obj.begin() + self.obj.compress(data)
+        return self.obj.compress(data)
+    def decompress(self, data):
+        return self.obj.decompress(data)
+    def flush(self):
+        return self.obj.flush()
+
+class NoCompression:
+    def compress(self, data):
+        return data
+    def flush(self):
+        return bytes()
+    def decompress(self, data):
+        return data
+
+def init_compress(ctype):
     global COMPRESSOR
     global DECOMPRESSOR
-    COMPRESSOR   = lzma.LZMACompressor()
-    DECOMPRESSOR = lzma.LZMADecompressor()
+    if (ctype == "lzma"):
+        COMPRESSOR   = lzma.LZMACompressor()
+        DECOMPRESSOR = lzma.LZMADecompressor()
+    elif (ctype == "bz2"):
+        COMPRESSOR = bz2.BZ2Compressor()
+        DECOMPRESSOR = bz2.BZ2Decompressor()
+    elif (ctype == "zlib"):
+        COMPRESSOR = zlib.compressobj(level=9)#ZlibWrapper(True)
+        DECOMPRESSOR = zlib.decompressobj()#ZlibWrapper(False)
+    elif (ctype == "lz4"):
+        COMPRESSOR = LZ4Wrapper(True)#lz4.stream.LZ4StreamCompressor("double_buffer", 512)
+        DECOMPRESSOR = LZ4Wrapper(False)#lz4.stream.LZ4StreamDecompressor("double_buffer", 512)
+    elif (ctype == "brotli"):
+        COMPRESSOR = brotli.brotli.Compressor()
+        DECOMPRESSOR = brotli.brotli.Decompressor()
+    elif (ctype == "none"):
+        COMPRESSOR = NoCompression()
+        DECOMPRESSOR = NoCompression()
+    else:
+        COMPRESSOR = None
+        DECOMPRESSOR = None
+
+COMPRESSION_ALGORITHMS_AVAILABLE = ["lzma", "bz2", "zlib", "lz4", "brotli", "none"]
 
 def test():
     cr = CantReadThis()
@@ -64,14 +118,24 @@ def test():
     print(sum([len(el) for el in f]), len(data)*1000)
 
 class CantReadThis:
-    def __init__(self, preset_pwd=None):
+
+    default_params = {
+            "compression_algorithm":"lzma",
+            }
+
+    def __init__(self, preset_pwd=None, params={}):
+        self.params = dict.copy(self.default_params)
+        for k, v in params.items():
+            if v is not None:
+                self.params[k] = v
+
         self.ncpu = mproc.cpu_count()
         self.tmp_file_data = {"filesize":None}
         self.rsize = RSIZE
         self.crumbs = dict()
         self.databuff = bytes()
         self.preset_pwd = None
-        if preset_pwd is not None:
+        if (preset_pwd is not None) and (preset_pwd != ""):
             self.preset_pwd = self.process_pwd(preset_pwd, ARGON2_CONF)[0]
 
     #AES encryption of a block of 16 bytes
@@ -128,13 +192,15 @@ class CantReadThis:
 
     #Header format:
     #   header_length|smaz_compress({dict of header})
-    def create_header(self, datahash, argon2_opt, info):
+    def create_header(self, datahash, argon2_opt, info, isdir):
         if info is None: info = "Processed with CantReadThis v" + str(VERSION)
         header = {
                 "h":datahash,
                 "a":argon2_opt,
                 "i":info.replace(" ", "_"),
                 "s":SECURITY_LEVEL,
+                "d":int(isdir),
+                "c":COMPRESSION_ALGORITHMS_AVAILABLE.index(self.params["compression_algorithm"])
                 }
         bin_head = self.compress_text(json.dumps(header).replace(" ", ""))
         if TESTING:
@@ -198,12 +264,12 @@ class CantReadThis:
     def debug_data(self, data, name):
         pass#print(name, hashlib.sha256("".encode().join(data)).hexdigest())
 
-    def load_processed_data(self, dataf, data_start, fout):
+    def load_processed_data(self, dataf, data_start, fout, compression_algorithm):
         with mproc.Pool(self.ncpu) as pool:
             dataf.seek(data_start)
             h = hashlib.sha256()
             finished = False
-            init_compress()
+            init_compress(compression_algorithm)
             while not finished:
                 data_chunks = list()
                 for i in range(self.ncpu):
@@ -238,7 +304,7 @@ class CantReadThis:
             h = hashlib.sha256()
             finished = False
             self.databuff = bytes()
-            init_compress()
+            init_compress(self.params["compression_algorithm"])
             while not finished:
                 data_chunks = list()
                 for i in range(self.ncpu):
@@ -265,11 +331,11 @@ class CantReadThis:
                     h.update(r)
         return h.hexdigest()
 
-    def load_data(self, dataf, fout, display=False):
+    def load_data(self, dataf, fout, display=False, verbose=False):
         success, data_start, header = self.header_check(dataf)
-        if not success: return False, header
+        if not success: return False, header, False
         change_security_level(int(header["s"]))
-        if display:
+        if verbose:
             print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
             print("\n\t" + ",\n\t".join([str(k) + ": " + str(v) for k, v in header.items()]) + "\n")
         if self.preset_pwd is None:
@@ -277,14 +343,14 @@ class CantReadThis:
         else:
             pwd = self.preset_pwd
         self.setup_aes_handler(pwd)
-        checksum = self.load_processed_data(dataf, data_start, fout)
+        checksum = self.load_processed_data(dataf, data_start, fout, COMPRESSION_ALGORITHMS_AVAILABLE[header["c"]])
         if (header["h"] != checksum[:8]):
             print(header["h"])
             print(checksum)
-            return False, "Wrong checksum"
-        return True, fout
+            return False, "Wrong checksum", False
+        return True, fout, bool(header["d"])
 
-    def process_plaindata(self, dataf, fout, info=None, display=False, **kwargs):
+    def process_plaindata(self, dataf, fout, info=None, display=False, isdir=False, **kwargs):
         if self.preset_pwd is None:
             pwd, opt = self.ask_password("Enter password for data encryption: ")
         else:
@@ -292,7 +358,7 @@ class CantReadThis:
             opt = ARGON2_CONF
         self.setup_aes_handler(pwd)
         datahash = self.compute_hash(dataf)[:8]
-        data_head= self.create_header(datahash, opt, info)
+        data_head= self.create_header(datahash, opt, info, isdir)
         
         fout.write(data_head)
         try:
@@ -306,12 +372,36 @@ class CantReadThis:
             print(checksum)
         return True
 
+    def display_time(self, nsecs):
+        i = 0
+        let = ["s", "m", "h"]
+        nh = nsecs // 3600
+        nsecs -= nh*3600
+        nm = nsecs // 60
+        nsecs -= nm*60
+        res = ""
+        if nh != 0:
+            res += str(nh) + "h "
+        if nm != 0:
+            res += str(nm) + "m "
+        res += str(int(nsecs)) + "secs"
+        return res
+
     def handle_directory(self, fname, rsize=None, ret_data=False, **kwargs):
         # Zip the whole directory without compression (do not follow symlinks)
         #   Then process the file
-        return False, "Not implemented yet"
+        if fname[-1] == "/": fname = fname[:-1]
+        ziph = zipfile.ZipFile(fname + "_zipfile", 'w', zipfile.ZIP_STORED)
+        for root, dirs, files in os.walk(fname):
+            for file in files:
+                ziph.write(os.path.join(root, file))
+        ziph.close()
+        res = self.handle_file(fname + "_zipfile", rsize=rsize, ret_data=ret_data, isdir=True, **kwargs)
+        os.remove(fname + "_zipfile")
+        return res
 
-    def handle_file(self, fname, rsize=None, ret_data=False, **kwargs):
+    def handle_file(self, fname, rsize=None, ret_data=False, out=None, **kwargs):
+        t = time.time()
         if not os.path.isfile(fname):
             if not os.path.isdir(fname):
                 return False, "File doesn't exist"
@@ -330,31 +420,34 @@ class CantReadThis:
                 processed = False
 
         if processed:
+            if out is None:
+                out = fname.split(".cant_read_this")[0]
             with open(fname, "rb") as f:
-                return self.handle_processed_data(f, **kwargs)
+                return self.handle_processed_data(f, out, **kwargs)
         else:
             with open(fname, "rb") as dataf:
                 with open(fname + ".cant_read_this", "wb") as fout:
                     success = self.process_plaindata(dataf, fout, **kwargs)
-            if success and kwargs["display"]:
+            if success and kwargs["verbose"]:
                 src_sz = os.path.getsize(fname)
                 dst_sz = os.path.getsize(fname + ".cant_read_this")
                 ratio = round((float(dst_sz)/src_sz)*100,2)
                 print("\nStored securely\n\t" + fname + ".cant_read_this" + "\n\t" + self.byte_to_measure(src_sz) + " -> " + self.byte_to_measure(dst_sz))
+                print("Done in " + self.display_time(time.time()-t))
             if ret_data:
                 with open(fname + ".cant_read_this", "rb") as f:
                     return success, f.read()
             else:
                 return True, ""
 
-    def handle_processed_data(self, dataf, out=None, display=False, ret_data=False, **kwargs):
-        if out is not None:
-            res = open(out, "w+b")
-        elif display:
+    def handle_processed_data(self, dataf, out, display=False, verbose=False, ret_data=False, **kwargs):
+        if display:
             res = io.BytesIO()
+        else:
+            res = open(out, "w+b")
 
         try:
-            success, res = self.load_data(dataf, res, display=display)
+            success, res, isdir = self.load_data(dataf, res, display=display, verbose=verbose)
             if not success:
                 return False, res
 
@@ -371,6 +464,12 @@ class CantReadThis:
                 res.close()
             except:
                 pass
+
+        if isdir:
+            zipf = zipfile.ZipFile(out, 'r', zipfile.ZIP_STORED)
+            zipf.extractall("./")
+            zipf.close()
+            os.remove(out)
 
         if ret_data:
             return True, ret
@@ -455,20 +554,24 @@ def fit_parameters(t):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('fname', metavar='filename', type=str, help="The file you want to process/recover")
-    parser.add_argument('--outfile', '-o', type=str, help='Where to save the recovered data (if nothing is passed, will print it in stdout)')
+    parser.add_argument('--outfile', '-o', type=str, help='Where to save the recovered data')
+    parser.add_argument('--display-only', '-d', help='Print result to stdout and do not write to file', action="store_true")
     parser.add_argument('--info', '-i', type=str, help='Information about the file, its content or an indication of the password')
     parser.add_argument('--security-level', '-l', type=int,
             help='Security level to use, changes the parameters of the password derivation function. Can go to infinite, default is 1.', default=1)
     parser.add_argument('--find-parameters', '-f', help='Tests the parameters needed to get the given execution time (in ms / Kib)', type=int)
+    parser.add_argument('--compression-algorithm', '-c', help="The compression algorithm to use to process the data", type=str, choices=COMPRESSION_ALGORITHMS_AVAILABLE)
+    parser.add_argument('--verbose', '-v', help="Display informations about the file and the process", action="store_true")
+    parser.add_argument('--password', '-p', help='Password to use', type=str, default="")
 
-    cr = CantReadThis()
     args = parser.parse_args()
+    cr = CantReadThis(params=args.__dict__, preset_pwd=args.password)
 
     if args.find_parameters is not None:
         return fit_parameters(args.find_parameters)
 
     change_security_level(args.security_level)
-    success, res = cr.handle_file(args.fname, out=args.outfile, info=args.info, display=(args.outfile is None))
+    success, res = cr.handle_file(args.fname, out=args.outfile, info=args.info, display=args.display_only, verbose=args.verbose)
     if not success:
         print(res)
 
