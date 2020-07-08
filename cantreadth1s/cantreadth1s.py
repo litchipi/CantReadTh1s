@@ -86,9 +86,9 @@ def init_compress(ctype):
     elif (ctype == "lz4"):
         COMPRESSOR = LZ4Wrapper(True)#lz4.stream.LZ4StreamCompressor("double_buffer", 512)
         DECOMPRESSOR = LZ4Wrapper(False)#lz4.stream.LZ4StreamDecompressor("double_buffer", 512)
-    elif (ctype == "brotli"):
-        COMPRESSOR = brotli.brotli.Compressor()
-        DECOMPRESSOR = brotli.brotli.Decompressor()
+#    elif (ctype == "brotli"):
+#        COMPRESSOR = brotli.brotli.Compressor()
+#        DECOMPRESSOR = brotli.brotli.Decompressor()
     elif (ctype == "none"):
         COMPRESSOR = NoCompression()
         DECOMPRESSOR = NoCompression()
@@ -96,7 +96,7 @@ def init_compress(ctype):
         COMPRESSOR = None
         DECOMPRESSOR = None
 
-COMPRESSION_ALGORITHMS_AVAILABLE = ["lzma", "bz2", "zlib", "lz4", "brotli", "none"]
+COMPRESSION_ALGORITHMS_AVAILABLE = ["lzma", "bz2", "zlib", "lz4", "none"]#"brotli", "none"]
 
 def test():
     cr = CantReadThis()
@@ -120,7 +120,7 @@ def test():
 class CantReadThis:
 
     default_params = {
-            "compression_algorithm":"lzma",
+            "compression_algorithm":"zlib",
             }
 
     def __init__(self, preset_pwd=None, params={}):
@@ -136,7 +136,7 @@ class CantReadThis:
         self.databuff = bytes()
         self.preset_pwd = None
         if (preset_pwd is not None) and (preset_pwd != ""):
-            self.preset_pwd = self.process_pwd(preset_pwd, ARGON2_CONF)[0]
+            self.pwd = self.process_pwd(preset_pwd, ARGON2_CONF)[0]
 
     #AES encryption of a block of 16 bytes
     def setup_aes_handler(self, pwd):
@@ -380,21 +380,25 @@ class CantReadThis:
         nm = nsecs // 60
         nsecs -= nm*60
         res = ""
+        prec = 3
         if nh != 0:
             res += str(nh) + "h "
+            prec = 0
         if nm != 0:
             res += str(nm) + "m "
-        res += str(int(nsecs)) + "secs"
+            prec = 0
+        res += str(round(nsecs, prec)) + " secs"
         return res
 
     def handle_directory(self, fname, rsize=None, ret_data=False, **kwargs):
-        # Zip the whole directory without compression (do not follow symlinks)
-        #   Then process the file
+        pwd, opt = self.ask_password("Enter password for encryption of a whole folder: ")
+        self.preset_pwd = pwd
         if fname[-1] == "/": fname = fname[:-1]
         ziph = zipfile.ZipFile(fname + "_zipfile", 'w', zipfile.ZIP_STORED)
         for root, dirs, files in os.walk(fname):
             for file in files:
-                ziph.write(os.path.join(root, file))
+                if not os.path.islink(os.path.join(root, file)):
+                    ziph.write(os.path.join(root, file))
         ziph.close()
         res = self.handle_file(fname + "_zipfile", rsize=rsize, ret_data=ret_data, isdir=True, **kwargs)
         os.remove(fname + "_zipfile")
@@ -421,7 +425,10 @@ class CantReadThis:
 
         if processed:
             if out is None:
-                out = fname.split(".cant_read_this")[0]
+                if ".cant_read_this" in fname:
+                    out = fname.split(".cant_read_this")[0]
+                else:
+                    out = fname + ".recovered"
             with open(fname, "rb") as f:
                 return self.handle_processed_data(f, out, **kwargs)
         else:
@@ -431,8 +438,8 @@ class CantReadThis:
             if success and kwargs["verbose"]:
                 src_sz = os.path.getsize(fname)
                 dst_sz = os.path.getsize(fname + ".cant_read_this")
-                ratio = round((float(dst_sz)/src_sz)*100,2)
-                print("\nStored securely\n\t" + fname + ".cant_read_this" + "\n\t" + self.byte_to_measure(src_sz) + " -> " + self.byte_to_measure(dst_sz))
+                ratio = round(((float(dst_sz)/src_sz))*100,2)
+                print("\nStored securely\n\t" + fname + ".cant_read_this" + "\n\t" + self.byte_to_measure(src_sz) + " -> " + self.byte_to_measure(dst_sz) + " "*5 + str(ratio) + "%")
                 print("Done in " + self.display_time(time.time()-t))
             if ret_data:
                 with open(fname + ".cant_read_this", "rb") as f:
@@ -441,6 +448,7 @@ class CantReadThis:
                 return True, ""
 
     def handle_processed_data(self, dataf, out, display=False, verbose=False, ret_data=False, **kwargs):
+        t = time.time()
         if display:
             res = io.BytesIO()
         else:
@@ -470,7 +478,8 @@ class CantReadThis:
             zipf.extractall("./")
             zipf.close()
             os.remove(out)
-
+        if verbose:
+            print("Done in " + self.display_time(time.time()-t))
         if ret_data:
             return True, ret
         return True, None
