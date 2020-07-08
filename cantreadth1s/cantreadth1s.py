@@ -4,23 +4,20 @@
 import io
 import os
 import sys
+import bz2
 import smaz
 import time
 import math
 import json
-
-import zipfile
 import lzma
-import bz2
 import zlib
-import brotli
-import lz4.frame
-
 import argon2
 import random
+import zipfile
 import getpass
 import hashlib
 import argparse
+import lz4.frame
 import traceback
 from Crypto.Cipher import AES
 import multiprocessing as mproc
@@ -136,7 +133,7 @@ class CantReadThis:
         self.databuff = bytes()
         self.preset_pwd = None
         if (preset_pwd is not None) and (preset_pwd != ""):
-            self.pwd = self.process_pwd(preset_pwd, ARGON2_CONF)[0]
+            self.preset_pwd = self.process_pwd(preset_pwd, ARGON2_CONF)[0]
 
     #AES encryption of a block of 16 bytes
     def setup_aes_handler(self, pwd):
@@ -559,10 +556,13 @@ def fit_parameters(t):
             break
     print("\nDone\n")
 
+def print_version():
+    print("CantReadThis version " + str(VERSION))
+    print("Written by litchipi under GPLv3 license")
+    print("litchi.pi@protonmail.com\t@LitchiPi\n")
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('fname', metavar='filename', type=str, help="The file you want to process/recover")
     parser.add_argument('--outfile', '-o', type=str, help='Where to save the recovered data')
     parser.add_argument('--display-only', '-d', help='Print result to stdout and do not write to file', action="store_true")
     parser.add_argument('--info', '-i', type=str, help='Information about the file, its content or an indication of the password')
@@ -572,13 +572,21 @@ def main():
     parser.add_argument('--compression-algorithm', '-c', help="The compression algorithm to use to process the data", type=str, choices=COMPRESSION_ALGORITHMS_AVAILABLE)
     parser.add_argument('--verbose', '-v', help="Display informations about the file and the process", action="store_true")
     parser.add_argument('--password', '-p', help='Password to use', type=str, default="")
+    parser.add_argument("--version", "-V", help="Prints the current version", action="store_true")
+    parser.add_argument('fname', metavar='filename', type=str, help="The file you want to process/recover", nargs="?")
 
     args = parser.parse_args()
-    cr = CantReadThis(params=args.__dict__, preset_pwd=args.password)
-
-    if args.find_parameters is not None:
+    if args.version:
+        print_version()
+        sys.exit(0)
+    elif args.find_parameters is not None:
         return fit_parameters(args.find_parameters)
+    elif args.fname is None:
+        print_version()
+        parser.print_help()
+        sys.exit(0)
 
+    cr = CantReadThis(params=args.__dict__, preset_pwd=args.password)
     change_security_level(args.security_level)
     success, res = cr.handle_file(args.fname, out=args.outfile, info=args.info, display=args.display_only, verbose=args.verbose)
     if not success:
@@ -586,4 +594,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-#    test()

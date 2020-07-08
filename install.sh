@@ -2,7 +2,7 @@
 
 echo ""
 echo "[*] PIP requirements"
-pip3 install pycrypto smaz-py3 argon2 brotlipy lz4
+pip3 install pycrypto argon2 lz4
 
 echo ""
 echo "[*] Python lib install"
