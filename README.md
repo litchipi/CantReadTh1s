@@ -103,6 +103,7 @@ Will load the processed directory zipfile, then will extract the zipfile to the 
 
 ### TODO plans
 In order of priority
+* Class behaving like a FileObject to interact with crt file directly
 * Improve Python class usability for usage inside other projects
 * Split processed file into smaller chunks (and reverse process)
 * Improve speed with Cython

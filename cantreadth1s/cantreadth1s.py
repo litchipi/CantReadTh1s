@@ -131,13 +131,10 @@ class CantReadThis:
         self.rsize = RSIZE
         self.crumbs = dict()
         self.databuff = bytes()
-        self.preset_pwd = None
-        if (pwd is not None) and (pwd != ""):
-            self.setup_preset_pwd(pwd)
+        self.setup_preset_pwd(pwd)
 
-    def setup_preset_pwd(self, pwd, lsec=1):
-        change_security_level(max(1, lsec))
-        self.preset_pwd = self.process_pwd(pwd, ARGON2_CONF)[0]
+    def setup_preset_pwd(self, pwd):
+        self.preset_pwd = pwd
 
     #AES encryption of a block of 16 bytes
     def setup_aes_handler(self, pwd):
@@ -217,7 +214,11 @@ class CantReadThis:
         opt = dict.copy(ARGON2_CONF)
         if user_opt is not None:
             opt.update(user_opt)
-        return self.process_pwd(getpass.getpass(prompt), opt)
+        if self.preset_pwd is None:
+            pwd = getpass.getpass(prompt)
+        else:
+            pwd = self.preset_pwd
+        return self.process_pwd(pwd, opt)
 
     def process_pwd(self, pwd, opt):
         return hashlib.sha3_256(argon2.argon2_hash("CantReadTh1s_Password",
@@ -339,10 +340,7 @@ class CantReadThis:
         if verbose:
             print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
             print("\n\t" + ",\n\t".join([str(k) + ": " + str(v) for k, v in header.items()]) + "\n")
-        if self.preset_pwd is None:
-            pwd, opt = self.ask_password("Enter password for data decryption: ", user_opt=header["a"])
-        else:
-            pwd = self.preset_pwd
+        pwd, opt = self.ask_password("Enter password for data decryption: ", user_opt=header["a"])
         self.setup_aes_handler(pwd)
         checksum = self.load_processed_data(dataf, data_start, fout, COMPRESSION_ALGORITHMS_AVAILABLE[header["c"]])
         if (header["h"] != checksum[:8]):
@@ -352,11 +350,7 @@ class CantReadThis:
         return True, fout, bool(header["d"])
 
     def process_plaindata(self, dataf, fout, info=None, display=False, isdir=False, **kwargs):
-        if self.preset_pwd is None:
-            pwd, opt = self.ask_password("Enter password for data encryption: ")
-        else:
-            pwd = self.preset_pwd
-            opt = ARGON2_CONF
+        pwd, opt = self.ask_password("Enter password for data encryption: ")
         self.setup_aes_handler(pwd)
         datahash = self.compute_hash(dataf)[:8]
         data_head= self.create_header(datahash, opt, info, isdir)
@@ -431,7 +425,7 @@ class CantReadThis:
                 else:
                     out = fname + ".recovered"
             with open(fname, "rb") as f:
-                return self.handle_processed_data(f, out, **kwargs)
+                return self.handle_processed_data(f, out, verbose=verbose, **kwargs)
         else:
             if out is None:
                 out = fname + ".cant_read_this"
@@ -592,7 +586,7 @@ def main():
         parser.print_help()
         sys.exit(0)
 
-    cr = CantReadThis(params=args.__dict__, preset_pwd=args.password)
+    cr = CantReadThis(params=args.__dict__, pwd=args.password)
     change_security_level(args.security_level)
     success, res = cr.handle_file(args.fname, out=args.outfile, info=args.info, display=args.display_only, verbose=args.verbose)
     if not success:

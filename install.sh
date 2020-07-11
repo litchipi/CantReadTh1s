@@ -12,4 +12,5 @@ echo ""
 echo "[*] CLI tool setup"
 cwd=$(echo $PWD)
 cd / #Escape direnv $HOME relocalisation (see homesweethome project)
+rm -f $HOME/.local/bin/cantreadth1s
 ln -s $cwd/cantreadth1s/cantreadth1s.py $HOME/.local/bin/cantreadth1s
