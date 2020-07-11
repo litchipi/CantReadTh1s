@@ -120,7 +120,7 @@ class CantReadThis:
             "compression_algorithm":"zlib",
             }
 
-    def __init__(self, preset_pwd=None, params={}):
+    def __init__(self, pwd=None, params={}):
         self.params = dict.copy(self.default_params)
         for k, v in params.items():
             if v is not None:
@@ -132,8 +132,12 @@ class CantReadThis:
         self.crumbs = dict()
         self.databuff = bytes()
         self.preset_pwd = None
-        if (preset_pwd is not None) and (preset_pwd != ""):
-            self.preset_pwd = self.process_pwd(preset_pwd, ARGON2_CONF)[0]
+        if (pwd is not None) and (pwd != ""):
+            self.setup_preset_pwd(pwd)
+
+    def setup_preset_pwd(self, pwd, lsec=1):
+        change_security_level(max(1, lsec))
+        self.preset_pwd = self.process_pwd(pwd, ARGON2_CONF)[0]
 
     #AES encryption of a block of 16 bytes
     def setup_aes_handler(self, pwd):
@@ -387,27 +391,27 @@ class CantReadThis:
         res += str(round(nsecs, prec)) + " secs"
         return res
 
-    def handle_directory(self, fname, rsize=None, ret_data=False, **kwargs):
+    def handle_directory(self, fname, rsize=None, ret_data=False, out=None, verbose=False, **kwargs):
         pwd, opt = self.ask_password("Enter password for encryption of a whole folder: ")
         self.preset_pwd = pwd
         if fname[-1] == "/": fname = fname[:-1]
-        ziph = zipfile.ZipFile(fname + "_zipfile", 'w', zipfile.ZIP_STORED)
+        ziph = zipfile.ZipFile(fname + ".zip", 'w', zipfile.ZIP_STORED)
         for root, dirs, files in os.walk(fname):
             for file in files:
                 if not os.path.islink(os.path.join(root, file)):
                     ziph.write(os.path.join(root, file))
         ziph.close()
-        res = self.handle_file(fname + "_zipfile", rsize=rsize, ret_data=ret_data, isdir=True, **kwargs)
-        os.remove(fname + "_zipfile")
+        res = self.handle_file(fname + ".zip", rsize=rsize, ret_data=ret_data, out=out, verbose=verbose, isdir=True, **kwargs)
+        os.remove(fname + ".zip")
         return res
 
-    def handle_file(self, fname, rsize=None, ret_data=False, out=None, **kwargs):
+    def handle_file(self, fname, rsize=None, ret_data=False, out=None, verbose=False, **kwargs):
         t = time.time()
         if not os.path.isfile(fname):
             if not os.path.isdir(fname):
                 return False, "File doesn't exist"
             else:
-                return self.handle_directory(fname, rsize=rsize, ret_data=ret_data, **kwargs)
+                return self.handle_directory(fname, rsize=rsize, ret_data=ret_data, out=out, **kwargs)
 
         self.tmp_file_data["filesize"] = os.path.getsize(fname)
         if rsize is not None:
@@ -429,10 +433,12 @@ class CantReadThis:
             with open(fname, "rb") as f:
                 return self.handle_processed_data(f, out, **kwargs)
         else:
+            if out is None:
+                out = fname + ".cant_read_this"
             with open(fname, "rb") as dataf:
-                with open(fname + ".cant_read_this", "wb") as fout:
+                with open(out, "wb") as fout:
                     success = self.process_plaindata(dataf, fout, **kwargs)
-            if success and kwargs["verbose"]:
+            if success and verbose:
                 src_sz = os.path.getsize(fname)
                 dst_sz = os.path.getsize(fname + ".cant_read_this")
                 ratio = round(((float(dst_sz)/src_sz))*100,2)
