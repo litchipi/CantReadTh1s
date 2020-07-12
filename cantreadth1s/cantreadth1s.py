@@ -120,7 +120,8 @@ class CantReadThis:
             "compression_algorithm":"zlib",
             }
 
-    def __init__(self, pwd=None, params={}):
+    def __init__(self, pwd="", sec_level=1, params={}):
+        change_security_level(max(1, sec_level))
         self.params = dict.copy(self.default_params)
         for k, v in params.items():
             if v is not None:
@@ -214,7 +215,7 @@ class CantReadThis:
         opt = dict.copy(ARGON2_CONF)
         if user_opt is not None:
             opt.update(user_opt)
-        if self.preset_pwd is None:
+        if self.preset_pwd == "":
             pwd = getpass.getpass(prompt)
         else:
             pwd = self.preset_pwd
@@ -499,7 +500,7 @@ def benchmark():
         d.seek(0)
         o = io.BytesIO()
         t = time.time()
-        crt = CantReadThis(preset_pwd="password")
+        crt = CantReadThis(pwd="password")
         crt.process_plaindata(d, o)
         dt = time.time() - t
         res.append(dt/n)
