@@ -133,6 +133,7 @@ class CantReadThis:
         self.crumbs = dict()
         self.databuff = bytes()
         self.setup_preset_pwd(pwd)
+        self.preprocessed_pwd = None
 
     def setup_preset_pwd(self, pwd):
         self.preset_pwd = pwd
@@ -212,14 +213,16 @@ class CantReadThis:
         return (self.extract_header(dataf)[0] is not None)
 
     def ask_password(self, prompt, user_opt=None):
-        opt = dict.copy(ARGON2_CONF)
-        if user_opt is not None:
-            opt.update(user_opt)
-        if self.preset_pwd == "":
-            pwd = getpass.getpass(prompt)
-        else:
-            pwd = self.preset_pwd
-        return self.process_pwd(pwd, opt)
+        if self.preprocessed_pwd is None:
+            opt = dict.copy(ARGON2_CONF)
+            if user_opt is not None:
+                opt.update(user_opt)
+            if self.preset_pwd == "":
+                pwd = getpass.getpass(prompt)
+            else:
+                pwd = self.preset_pwd
+            self.preprocessed_pwd = self.process_pwd(pwd, opt)
+        return self.preprocessed_pwd
 
     def process_pwd(self, pwd, opt):
         return hashlib.sha3_256(argon2.argon2_hash("CantReadTh1s_Password",
@@ -388,7 +391,6 @@ class CantReadThis:
 
     def handle_directory(self, fname, rsize=None, ret_data=False, out=None, verbose=False, **kwargs):
         pwd, opt = self.ask_password("Enter password for encryption of a whole folder: ")
-        self.preset_pwd = pwd
         if fname[-1] == "/": fname = fname[:-1]
         ziph = zipfile.ZipFile(fname + ".zip", 'w', zipfile.ZIP_STORED)
         for root, dirs, files in os.walk(fname):
