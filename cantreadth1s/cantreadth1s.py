@@ -390,16 +390,22 @@ class CantReadThis:
         return res
 
     def handle_directory(self, fname, rsize=None, ret_data=False, out=None, verbose=False, **kwargs):
-        pwd, opt = self.ask_password("Enter password for encryption of a whole folder: ")
         if fname[-1] == "/": fname = fname[:-1]
-        ziph = zipfile.ZipFile(fname + ".zip", 'w', zipfile.ZIP_STORED)
+        fname = os.path.abspath(fname)
+
+        zip_root = os.path.abspath(os.path.curdir)
+        pwd, opt = self.ask_password("Enter password for encryption of a whole folder: ")
+
+        ziph = zipfile.ZipFile(fname + ".dirbck", 'w', zipfile.ZIP_STORED)
         for root, dirs, files in os.walk(fname):
+            ziph.write(root.replace(zip_root, "."))
             for file in files:
                 if not os.path.islink(os.path.join(root, file)):
-                    ziph.write(os.path.join(root, file))
+                    ziph.write(os.path.join(root, file).replace(zip_root, "."))
         ziph.close()
-        res = self.handle_file(fname + ".zip", rsize=rsize, ret_data=ret_data, out=out, verbose=verbose, isdir=True, **kwargs)
-        os.remove(fname + ".zip")
+
+        res = self.handle_file(fname + ".dirbck", rsize=rsize, ret_data=ret_data, out=out, verbose=verbose, isdir=True, **kwargs)
+        os.remove(fname + ".dirbck")
         return res
 
     def handle_file(self, fname, rsize=None, ret_data=False, out=None, verbose=False, **kwargs):
@@ -432,6 +438,8 @@ class CantReadThis:
         else:
             if out is None:
                 out = fname + ".cant_read_this"
+            elif ".cant_read_this" not in out:
+                out += ".cant_read_this"
             with open(fname, "rb") as dataf:
                 with open(out, "wb") as fout:
                     success = self.process_plaindata(dataf, fout, **kwargs)
@@ -475,9 +483,11 @@ class CantReadThis:
 
         if isdir:
             zipf = zipfile.ZipFile(out, 'r', zipfile.ZIP_STORED)
-            zipf.extractall("./")
-            zipf.close()
-            os.remove(out)
+            try:
+                zipf.extractall(os.path.abspath(os.path.curdir) + "/")
+            finally:
+                zipf.close()
+                os.remove(out)
         if verbose:
             print("Done in " + self.display_time(time.time()-t))
         if ret_data:
