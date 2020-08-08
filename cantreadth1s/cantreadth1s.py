@@ -41,6 +41,14 @@ ENCRYPTION_HANDLER = None
 COMPRESSOR = None
 DECOMPRESSOR = None
 
+def change_security_level(level):
+    global SECURITY_LEVEL
+    global ARGON2_DEFAULT_CONF
+    SECURITY_LEVEL = int(level)
+    ARGON2_CONF["t"] = int(ARGON2_DEFAULT_CONF["t"] + ((level-1)*2))
+    ARGON2_CONF["m"] = int(ARGON2_DEFAULT_CONF["m"] + ((level-1)*256))
+    ARGON2_CONF["l"] = int(ARGON2_DEFAULT_CONF["l"] + ((level-1)*AES_BS))
+
 class LZ4Wrapper:
     def __init__(self, compress):
         self.beginned = False
@@ -95,24 +103,11 @@ def init_compress(ctype):
 
 COMPRESSION_ALGORITHMS_AVAILABLE = ["lzma", "bz2", "zlib", "lz4", "none"]#"brotli", "none"]
 
-def test():
-    cr = CantReadThis()
-    cr.setup_aes_handler("a"*AES_BS)
-    data = "tatatointointutu".encode()
 
-    dclist = cr.prepare_datachunks([data for i in range(1000)], bs=16)
-    
-    res = list()
-    f = list()
-    for dc in dclist:
-        c = cr.compress_datachunk(dc)
-        e = cr.encrypt_datachunk(pad(c))
-        f.append(e)
-        d = unpad(cr.decrypt_datachunk(e))
-        r = cr.decompress_datachunk(d)
-        res.append(r)
-    print("".encode().join([data for i in range(1000)]) == "".encode().join(res))
-    print(sum([len(el) for el in f]), len(data)*1000)
+
+
+
+
 
 class CantReadThis:
 
@@ -389,6 +384,57 @@ class CantReadThis:
         res += str(round(nsecs, prec)) + " secs"
         return res
 
+    def handle_processed_data(self, dataf, out, display=False, verbose=False, ret_data=False, **kwargs):
+        t = time.time()
+        if display:
+            res = io.BytesIO()
+        else:
+            res = open(out, "w+b")
+
+        try:
+            success, res, isdir = self.load_data(dataf, res, display=display, verbose=verbose)
+            if not success:
+                return False, res
+
+            if display:
+                res.seek(0)
+                self.display_data(res.read())
+
+            if ret_data:
+                res.seek(0)
+                ret = res.read()
+
+        finally:
+            try:
+                res.close()
+            except:
+                pass
+
+        if isdir:
+            zipf = zipfile.ZipFile(out, 'r', zipfile.ZIP_STORED)
+            try:
+                zipf.extractall(os.path.abspath(os.path.curdir) + "/")
+            finally:
+                zipf.close()
+                os.remove(out)
+        if verbose:
+            print("Done in " + self.display_time(time.time()-t))
+        if ret_data:
+            return True, ret
+        return True, None
+
+    def display_data(self, data):
+        try:
+            s = str(data.decode()) + "\n"
+            os.system("clear")
+            sys.stdout.write(s)
+        except:
+            sys.stdout.write(str(data) + "\n")
+            sys.stdout.write(type(data).__name__ + "\n")
+        sys.stdout.flush()
+
+
+
     def handle_directory(self, fname, rsize=None, ret_data=False, out=None, verbose=False, **kwargs):
         if fname[-1] == "/": fname = fname[:-1]
         fname = os.path.abspath(fname)
@@ -455,54 +501,20 @@ class CantReadThis:
             else:
                 return True, ""
 
-    def handle_processed_data(self, dataf, out, display=False, verbose=False, ret_data=False, **kwargs):
-        t = time.time()
-        if display:
-            res = io.BytesIO()
-        else:
-            res = open(out, "w+b")
 
-        try:
-            success, res, isdir = self.load_data(dataf, res, display=display, verbose=verbose)
-            if not success:
-                return False, res
 
-            if display:
-                res.seek(0)
-                self.display_data(res.read())
 
-            if ret_data:
-                res.seek(0)
-                ret = res.read()
 
-        finally:
-            try:
-                res.close()
-            except:
-                pass
 
-        if isdir:
-            zipf = zipfile.ZipFile(out, 'r', zipfile.ZIP_STORED)
-            try:
-                zipf.extractall(os.path.abspath(os.path.curdir) + "/")
-            finally:
-                zipf.close()
-                os.remove(out)
-        if verbose:
-            print("Done in " + self.display_time(time.time()-t))
-        if ret_data:
-            return True, ret
-        return True, None
 
-    def display_data(self, data):
-        try:
-            s = str(data.decode()) + "\n"
-            os.system("clear")
-            sys.stdout.write(s)
-        except:
-            sys.stdout.write(str(data) + "\n")
-            sys.stdout.write(type(data).__name__ + "\n")
-        sys.stdout.flush()
+
+
+
+
+
+
+
+
 
 def benchmark():
     res = list()
@@ -539,14 +551,6 @@ def find_best_parameters_fit(t):
         return n-1
     else:
         return n-2
-
-def change_security_level(level):
-    global SECURITY_LEVEL
-    global ARGON2_DEFAULT_CONF
-    SECURITY_LEVEL = int(level)
-    ARGON2_CONF["t"] = int(ARGON2_DEFAULT_CONF["t"] + ((level-1)*2))
-    ARGON2_CONF["m"] = int(ARGON2_DEFAULT_CONF["m"] + ((level-1)*256))
-    ARGON2_CONF["l"] = int(ARGON2_DEFAULT_CONF["l"] + ((level-1)*AES_BS))
 
 def fit_parameters(t):
     res = list()
