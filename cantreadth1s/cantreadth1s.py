@@ -20,10 +20,11 @@ import hashlib
 import argparse
 import lz4.frame
 import traceback
+import Crypto.Random
 from Crypto.Cipher import AES
 import multiprocessing as mproc
 
-VERSION = 0.5
+VERSION = "0.5.1"
 TESTING = False
 
 AES_BS = 16
@@ -202,7 +203,10 @@ class CantReadThis:
             dataread = dataf.read(self.rsize)
         return h.hexdigest()
 
-    def ask_password(self, prompt, user_opt=None):
+    def generate_seed(self):
+        return hashlib.sha3_512(Crypto.Random.new().read(1024*SECURITY_LEVEL)).hexdigest()[:(8*SECURITY_LEVEL)]
+
+    def ask_password(self, prompt, seed, user_opt=None):
         if self.preprocessed_pwd is None:
             opt = dict.copy(ARGON2_CONF)
             if user_opt is not None:
@@ -211,11 +215,11 @@ class CantReadThis:
                 pwd = getpass.getpass(prompt)
             else:
                 pwd = self.preset_pwd
-            self.preprocessed_pwd = self.process_pwd(pwd, opt)
+            self.preprocessed_pwd = self.process_pwd(pwd, opt, seed)
         return self.preprocessed_pwd
 
-    def process_pwd(self, pwd, opt):
-        return hashlib.sha3_256(argon2.argon2_hash("CantReadTh1s_Password",
+    def process_pwd(self, pwd, opt, seed):
+        return hashlib.sha3_256(argon2.argon2_hash(seed,#"",
                     hashlib.sha256(pwd.encode()).digest(),
                     t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])).digest(), opt
 
@@ -237,9 +241,10 @@ class CantReadThis:
         elif (header_type == 1):
             return self.__create_header_dict(*args, **kwargs)
 
-    def __create_header_dict(self, checksum, argon2_opt, info):
-        if info is None: info = "Processed with CantReadThis v" + str(VERSION)
+    def __create_header_dict(self, checksum, argon2_opt, info, seed):
+        if info is None: info = "Processed with CantReadThis v" + VERSION
         header = {
+                "g":seed,
                 "h":checksum,
                 "a":argon2_opt,
                 "i":info.replace(" ", "_"),
@@ -248,9 +253,10 @@ class CantReadThis:
                 }
         return header
 
-    def __create_header_file(self, datahash, argon2_opt, info, isdir):
-        if info is None: info = "Processed with CantReadThis v" + str(VERSION)
+    def __create_header_file(self, datahash, argon2_opt, info, isdir, seed):
+        if info is None: info = "Processed with CantReadThis v" + VERSION
         header = {
+                "g":seed,
                 "h":datahash,
                 "a":argon2_opt,
                 "i":info.replace(" ", "_"),
@@ -424,7 +430,9 @@ class CantReadThis:
         if verbose:
             print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
             print("\n\t" + ",\n\t".join([str(k) + ": " + str(v) for k, v in header.items()]) + "\n")
-        pwd, opt = self.ask_password("Enter password for data decryption: ", user_opt=header["a"])
+        if "g" not in header:
+            header["g"] = "CantReadTh1s_Password"
+        pwd, opt = self.ask_password("Enter password for data decryption: ", header["g"], user_opt=header["a"])
         t = time.time()
         self.setup_aes_handler(pwd)
         checksum = self.__load_processed_data_raw(dataf, data_start, fout, COMPRESSION_ALGORITHMS_AVAILABLE[header["c"]])
@@ -435,11 +443,12 @@ class CantReadThis:
         return True, fout, bool(header["d"])
 
     def __process_data(self, dataf, fout, info=None, display=False, isdir=False, verbose=False):
-        pwd, opt = self.ask_password("Enter password for data encryption: ")
+        seed = self.generate_seed()
+        pwd, opt = self.ask_password("Enter password for data encryption: ", seed)
         t = time.time()
         self.setup_aes_handler(pwd)
         datahash = self.compute_hash_dataf(dataf)[:8]
-        data_head= self.create_header(datahash, opt, info, isdir)
+        data_head= self.create_header(datahash, opt, info, isdir, seed)
         
         fout.write(data_head)
         try:
@@ -577,27 +586,31 @@ class CantReadThis:
 
 
 ################## WRAPPER #########################
-    def handle_dict(self, obj, rsize=None, verbose=False, info=None, **kwargs):
+    def handle_dict(self, obj, load_only=False, rsize=None, verbose=False, info=None, **kwargs):
         if ("__crt__" in obj.keys()):       # LOAD
             header = obj["__crt__"]
             change_security_level(int(header["s"]))
             if verbose:
                 print("Information about the file:\n\t" + str(header["i"].replace("_", " ")))
                 print("\n\t" + ",\n\t".join([str(k) + ": " + str(v) for k, v in header.items()]) + "\n")
-
-            pwd, opt = self.ask_password("Enter password for data decryption: ", user_opt=header["a"])
+            if "g" not in header:
+                header["g"] = "CantReadTh1s_Password"
+            pwd, opt = self.ask_password("Enter password for data decryption: ", header["g"], user_opt=header["a"])
             self.setup_aes_handler(pwd)
             checksum, dict_json = self.__load_string_raw(obj["__data__"], COMPRESSION_ALGORITHMS_AVAILABLE[header["c"]])
             if (checksum != header["h"]):
                 return False, "Wrong checksum"
             return True, json.loads(dict_json)
-        else:                               # PROCESS
-            pwd, opt = self.ask_password("Enter password for data encryption: ")
+        elif not load_only:                               # PROCESS
+            seed = self.generate_seed()
+            pwd, opt = self.ask_password("Enter password for data encryption: ", seed)
             self.setup_aes_handler(pwd)
             res = dict()
             checksum, res["__data__"] = self.__process_string_raw(json.dumps(obj).replace(" ", ""))
-            res["__crt__"] = self.create_header(checksum, opt, info, header_type=1)
+            res["__crt__"] = self.create_header(checksum, opt, info, seed, header_type=1)
             return True, res
+        else:                   # NOT PROCESSED AND LOAD ONLY
+            return True, obj
 
     def handle_directory(self, fname, rsize=None, ret_data=False, out=None, verbose=False, **kwargs):
         if fname[-1] == "/": fname = fname[:-1]
@@ -668,7 +681,8 @@ class CantReadThis:
 
 
 
-
+def derive_key(key, name, keylength=256, **argon2_cfg):
+    return base64.b85encode(argon2.argon2_hash(name, salt=key, buflen=keylength, **argon2_cfg))
 
 
 
@@ -736,7 +750,7 @@ def fit_parameters(t):
     print("\nDone\n")
 
 def print_version():
-    print("CantReadThis version " + str(VERSION))
+    print("CantReadThis version " + VERSION)
     print("Written by litchipi under GPLv3 license")
     print("litchi.pi@protonmail.com\t@LitchiPi\n")
 
@@ -745,7 +759,7 @@ def main():
     parser.add_argument('--outfile', '-o', type=str, help='Where to save the recovered data')
     parser.add_argument('--display-only', '-d', help='Print result to stdout and do not write to file', action="store_true")
     parser.add_argument('--info', '-i', type=str, help='Information about the file, its content or an indication of the password')
-    parser.add_argument('--security-level', '-l', type=int,
+    parser.add_argument('--security-level', '-s', type=int,
             help='Security level to use, changes the parameters of the password derivation function. Can go to infinite, default is 1.', default=1)
     parser.add_argument('--find-parameters', '-f', help='Tests the parameters needed to get the given execution time (in ms / Kib)', type=int)
     parser.add_argument('--compression-algorithm', '-c', help="The compression algorithm to use to process the data", type=str, choices=COMPRESSION_ALGORITHMS_AVAILABLE)

@@ -1,1 +1,1 @@
-from .cantreadth1s import CantReadThis
+from .cantreadth1s import CantReadThis, derive_key
