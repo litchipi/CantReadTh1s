@@ -442,8 +442,9 @@ class CantReadThis:
             print("Done in " + self.display_time(time.time()-t))
         return True, fout, bool(header["d"])
 
-    def __process_data(self, dataf, fout, info=None, display=False, isdir=False, verbose=False):
-        seed = self.generate_seed()
+    def __process_data(self, dataf, fout, info=None, display=False, isdir=False, verbose=False, seed=None):
+        if seed is None:
+            seed = self.generate_seed()
         pwd, opt = self.ask_password("Enter password for data encryption: ", seed)
         t = time.time()
         self.setup_aes_handler(pwd)
@@ -617,7 +618,8 @@ class CantReadThis:
         fname = os.path.abspath(fname)
 
         zip_root = os.path.abspath(os.path.curdir)
-        pwd, opt = self.ask_password("Enter password for encryption of a whole folder: ")
+        seed = self.generate_seed()
+        pwd, opt = self.ask_password("Enter password for encryption of a whole folder: ", seed)
 
         ziph = zipfile.ZipFile(fname + ".dirbck", 'w', zipfile.ZIP_STORED)
         for root, dirs, files in os.walk(fname):
@@ -627,11 +629,11 @@ class CantReadThis:
                     ziph.write(os.path.join(root, file).replace(zip_root, "."))
         ziph.close()
 
-        res = self.handle_file(fname + ".dirbck", rsize=rsize, ret_data=ret_data, out=out, verbose=verbose, isdir=True, **kwargs)
+        res = self.handle_file(fname + ".dirbck", rsize=rsize, ret_data=ret_data, out=out, seed=seed, verbose=verbose, isdir=True, **kwargs)
         os.remove(fname + ".dirbck")
         return res
 
-    def handle_file(self, fname, rsize=None, ret_data=False, out=None, verbose=False, **kwargs):
+    def handle_file(self, fname, rsize=None, ret_data=False, out=None, verbose=False, seed=None, **kwargs):
         if not os.path.isfile(fname):
             if not os.path.isdir(fname):
                 return False, "File doesn't exist"
@@ -664,7 +666,7 @@ class CantReadThis:
                 out += ".cant_read_this"
             with open(fname, "rb") as dataf:
                 with open(out, "wb") as fout:
-                    success = self.__process_data(dataf, fout, verbose=verbose, **kwargs)
+                    success = self.__process_data(dataf, fout, verbose=verbose, seed=seed, **kwargs)
             if success and verbose:
                 src_sz = os.path.getsize(fname)
                 dst_sz = os.path.getsize(fname + ".cant_read_this")
