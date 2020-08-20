@@ -351,6 +351,8 @@ class CantReadThis:
         res += str(round(nsecs, prec)) + " secs"
         return res
 
+    def is_processed_dict(self, d):
+        return "__crt__" in d.keys()
 
 
 
@@ -684,7 +686,7 @@ class CantReadThis:
 
 
 def derive_key(key, name, keylength=256, **argon2_cfg):
-    return base64.b85encode(argon2.argon2_hash(name, salt=key, buflen=keylength, **argon2_cfg))
+    return base64.b85encode(argon2.argon2_hash(name, salt=key, buflen=keylength, **argon2_cfg)).decode()
 
 
 
