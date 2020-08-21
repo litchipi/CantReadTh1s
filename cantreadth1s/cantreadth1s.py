@@ -204,6 +204,7 @@ class CantReadThis:
         return h.hexdigest()
 
     def generate_seed(self):
+        Crypto.Random.atfork()
         return hashlib.sha3_512(Crypto.Random.new().read(1024*SECURITY_LEVEL)).hexdigest()[:(8*SECURITY_LEVEL)]
 
     def ask_password(self, prompt, seed, user_opt=None):
@@ -352,10 +353,7 @@ class CantReadThis:
         return res
 
     def is_processed_dict(self, d):
-        return "__crt__" in d.keys()
-
-
-
+        return (type(d) == dict) and ("__crt__" in d.keys())
 
 
 
@@ -590,7 +588,9 @@ class CantReadThis:
 
 ################## WRAPPER #########################
     def handle_dict(self, obj, load_only=False, rsize=None, verbose=False, info=None, **kwargs):
-        if ("__crt__" in obj.keys()):       # LOAD
+        if type(obj) != dict:
+            return False, None
+        if self.is_processed_dict(obj):                 # LOAD
             header = obj["__crt__"]
             change_security_level(int(header["s"]))
             if verbose:
