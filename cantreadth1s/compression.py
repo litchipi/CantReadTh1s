@@ -29,7 +29,7 @@ class CompressionWrapper:
         if self.compressor is None:
             return data
         else:
-            return self.compressor.compress(data) + self.compressor.flush()
+            return self.compressor.compress(data)
 
     def decompress(self, data):
         if self.decompressor is None:
@@ -37,6 +37,10 @@ class CompressionWrapper:
         else:
             return self.decompressor.decompress(data)# + self.decompressor.flush()
 
+    def cmp_finish(self):
+        if self.decompressor is None:
+            return "".encode()
+        return self.compressor.flush()
 
 
 

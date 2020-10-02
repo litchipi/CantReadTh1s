@@ -3,9 +3,6 @@ import base64
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from .sec_tools import get_argon2_opts, process_pwd
-
-
 class EncryptionWrapper:
     block_size = algorithms.AES.block_size
     def __init__(self, ncpu, pwd, sec_level, iv=None):

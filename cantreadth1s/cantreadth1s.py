@@ -22,7 +22,7 @@ import multiprocessing as mproc
 
 from .encryption import EncryptionWrapper
 from .compression import CompressionWrapper
-from .sec_tools import get_argon2_opts, process_pwd
+from .sec_tools import generate_argon2_opts, process_pwd
 
 VERSION = "0.6"
 CRT_FILE_EXTENSION = ".crt"
@@ -35,21 +35,28 @@ class CantReadThis:
             "compression_algorithm":"zlib",
             "info":VERSION,
             "header_misc_data":{},
-            "fileobject":False,
+            "fileobject":False,         #TODO
             "rsize":(10*1024*1024),
             "security_level":1,
-            "randomized_name":False,
+            "randomized_name":False,    #TODO
             "outfile":None,
             "debug":False,
             "verbose":False,
-            "return_data":False
+            "return_data":False,
+            "argon2_params":None
             }
 
     def __init__(self, **kwparams):
         self.params = dict.copy(self.default_params)
         self.params.update({k:v for k, v in kwparams.items() if v is not None})
+
+        # Parameters auto-generation
+        if (self.params["argon2_params"] is None):
+            self.params["argon2_params"] = generate_argon2_opts(self.params["security_level"])
         self.params["rsize"] = max(EncryptionWrapper.block_size,
                 self.params["rsize"]-(self.params["rsize"]%EncryptionWrapper.block_size))
+
+
         self.ncpu = mproc.cpu_count()
         self.preprocessed_pwd = None
         self.pwd_seed = None
@@ -75,12 +82,13 @@ class CantReadThis:
     def generate_seed(self):
         return hashlib.sha3_512(os.urandom(1024*self.params["security_level"])).hexdigest()[:(8*self.params["security_level"])]
 
-
-
 ############# USEFULL MISC FUNCTIONS ################################
 
     def verify_checksum(self, c1, c2):
         if c1 != c2:
+            if self.params["debug"]:
+                print(c1)
+                print(c2)
             raise Exception("Wrong checksum")
 
     def byte_to_measure(self, b, nprec=1):
@@ -126,7 +134,7 @@ class CantReadThis:
                 pwd = getpass.getpass("Password: ")
             self.pwd_seed = self.generate_seed()
             self.preprocessed_pwd = process_pwd(pwd,
-                    get_argon2_opts(self.params["security_level"]),
+                    self.params["argon2_params"],
                     self.pwd_seed)
         return self.preprocessed_pwd
 
@@ -176,17 +184,23 @@ class CantReadThis:
         return h.hexdigest()
 
     def __data_process(self, fin, fout):
-        h = hashlib.sha256()
+        h = hashlib.sha256()        #Doesn't work
         if self.params["debug"]:
             h2 = hashlib.sha256()
         ndata = (self.params["rsize"] * self.ncpu)
         fin.seek(0)
         finished = False
+        n = 0
         while not finished:
             data = fin.read(ndata)
+            if self.params["debug"]:
+                print("processing loop", n, len(data), ndata, len(data) < ndata)
+                n += 1
             h.update(data)
-            finished = (len(data) <= ndata)
+            finished = (len(data) < ndata)
             cmp_data = self.cmp.compress(data)
+            if finished:
+                cmp_data += self.cmp.cmp_finish()
             enc_data = self.enc.encrypt(cmp_data)
             if self.params["debug"]:
                 h2.update(enc_data)
@@ -248,7 +262,7 @@ class CantReadThis:
                 "v":self.enc.iv,
                 "g":self.pwd_seed,
                 "h":checksum,
-                "a":get_argon2_opts(self.params["security_level"]),
+                "a":self.params["argon2_params"],
                 "i":self.params["info"].replace(" ", "_"),
                 "s":self.params["security_level"],
                 "c":CompressionWrapper.COMPRESSION_ALGORITHMS_AVAILABLE.index(self.params["compression_algorithm"]),
@@ -390,6 +404,9 @@ class CantReadThis:
             return True, results
         else:
             fname = flist[0]
+
+        if self.params["debug"]:
+            print("Taking care of file " + fname)
 
         if not os.path.isfile(fname):
             if not os.path.isdir(fname):

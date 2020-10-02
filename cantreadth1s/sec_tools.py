@@ -7,7 +7,7 @@ from multiprocessing import cpu_count
 ARGON2_MIN_CONF = {"t":2, "m":1024, "l":256, "p":cpu_count()}
 ARGON2_INCREASE = {"t":2, "m":512, "l":32, "p":0}
 
-def get_argon2_opts(level):
+def generate_argon2_opts(level):
     return {k:int(ARGON2_MIN_CONF[k] + ((level-1)*ARGON2_INCREASE[k])) for k in ARGON2_MIN_CONF.keys()}
 
 def derive_key(key, name, keylength=256, **argon2_cfg):

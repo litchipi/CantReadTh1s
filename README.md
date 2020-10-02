@@ -1,117 +1,65 @@
 # CantReadTh1s
 Just a simple encrypted backup tool, provides encryption and compression of data.
 
-For now, not yet secured for real cryptographic security.
-Please mess with it, but don't use it for anything important
+Made to be as much secure as possible.
+Please mess with it, but don't use it for anything important.
 
-## Usage:
+## Overview
+Simple CLI tool to backup important files and encrypt them.
 ```
-usage: cantreadth1s [-h] [--outfile OUTFILE] [--display-only] [--info INFO] [--security-level SECURITY_LEVEL] [--find-parameters FIND_PARAMETERS] [--compression-algorithm {lzma,bz2,zlib,lz4,none}] [--verbose] [--password PASSWORD] filename
+cantreadth1s myfile
+```
+Process a file, outputs in myfile.crt (pass --outfile <filename> to modify the output file name)
+```
+cantreadth1s myfile.crt
+```
+Loads a file, outputs in myfile (pass --outfile <filename> to modify the output file name)
 
-positional arguments:
-  filename              The file you want to process/recover
+Can be imported inside a Python code to be used to create processed files from inside a code, or to process a dict, returning an encrypted and compressed dict
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --outfile OUTFILE, -o OUTFILE
-                        Where to save the recovered data
-  --display-only, -d    Print result to stdout and do not write to file
-  --info INFO, -i INFO  Information about the file, its content or an indication of the password
-  --security-level SECURITY_LEVEL, -l SECURITY_LEVEL
-                        Security level to use, changes the parameters of the password derivation function. Can go to infinite, default is 1.
-  --find-parameters FIND_PARAMETERS, -f FIND_PARAMETERS
-                        Tests the parameters needed to get the given execution time (in ms / Kib)
-  --compression-algorithm {lzma,bz2,zlib,lz4,none}, -c {lzma,bz2,zlib,lz4,none}
-                        The compression algorithm to use to process the data
-  --verbose, -v         Display informations about the file and the process
-  --password PASSWORD, -p PASSWORD
-                        Password to use
-```
-#### If \<filename\> is an encrypted file:
-- Will display the information about the file (passed by the --info option when it was created)
-- Will ask password for decryption
-- If --display is set, will display the result to stdout, else will output to file
+Uses:
+    sha256 for checksum
+    argon2 for key derivation
+    AES OFB for encryption
+    zlib for compression    (also available: lzma, bz2, lz4 or no compression)
 
-#### If \<filename\> is a non-encrypted file:
-- Will ask password for encryption
-- Will store the information about the file (passed by the --info option, default info is the version of CantReadTh1s used)
-- Will create file \<filename\>.cant_read_this which contains the compressed and encrypted data
+## Security level
+The security level is by default 1. It acts on the process as:
+- Argon2 options are increased in value (except parallel), resulting in more time needed to compute password derived key
+- Multiple passes in AES encryption
+- A longer seed used for password derivation
 
-### Data verification
-A file processed by this tool will get a header containing a portion of the SHA256 hash, and the length of the data.
-This way a corrupted / manipulated data will get detected by the tool and the user will be notified.
+There is no theoric limit to the security level.
+``` 
+cantreadth1s -s 30 veryimportantfile
+```
+Process a file with a security level of 30
 
-### Technical details
-- Data is stored encrypted using AES 256
-- Data compressed by default with Zlib
-- Header stored in JSON
-- Password Key Derivation with Argon2, with flexible settings (defaults are t=2, m=1024, p=Number of CPU x2)
-On an AMD Ryzen 5 3600X (6 cores), processes rockyou.txt in 40 secs, compressed from 134M to 50.8M.
+## Tweaks
+Every parameter can be tweaked from the Python object (or cli if you add some argument parser options).
+This way you can have custom argon2 parameters.
 
-### Security levels
-To fit particular needs, the tool can be used with different levels of security that can be added to the default minimal settings for more security.
-This affects the password derivation function (Argon2 hash) parameters, but may affect other aspects too as the tool gets developped.
-```
-    cantreadth1s -l 50 <file>
-```
-Will process the file \<file\> with a level of security of 50.
-```
-    cantreadth1s -f 500 <dummyfile>
-```
-Will find the maximal security parameters in order to reach get ~500 ms/Kib of data processing time.
+The default memory allowed for the processing is 10M, the data will then be read, compressed and encrypted 10M at a time.
+Note: that doesn't mean only 10M of RAM will be used.
 
-### Python usage
-The "CantReadThis" class permits any other script to very simply load the tool into an existing project. A very simple example can be seen within the test_script.py file inside this repository.
+## Exemples
+```
+cantreadth1s file0 file1 file2
+cantreadth1s --password neverdothis file0
+cantreadth1s my_dir/
+cantreadth1s my_dir.dir.crt
+cantreadth1s my_dir_2/ file0
+cantreadth1s --verbose
+cantreadth1s --info "This is my secured file"
+cantreadth1s --help
+```
 
-### Exemples
-```
-cantreadthis secret_data
-```
-Will create a file named "secret_data.cant_read_this" processed
+## Upcoming evolutions
+You are welcome if you want to help
+- Secured metadata inside the encrypted payload
+- Randomized output filenames (with filename restoration on load)
+- FileObject behavior on Python (supporting open, close, write and read)
+- multiprocessing for compression / encryption
+- file division in multiple parts
+- Steganography (just for fun)
 
-```
-cantreadth1s --info "the password is TATA" secret_data
-```
-Will create the file secret_data.cant_read_this
-When someone will try to decrypt this file with cantreadth1s again, it will display the information
-"the password is TATA". (This is a terrible idea, don't do this)
-
-```
-cantreadth1s --out outfile secret_data.cant_read_this
-```
-Will output to file "outfile" the data recovered from secret_data.cant_read_this
-
-```
-cantreadthis --display secret_message.cant_read_this
-```
-Will print on the screen the data recovered from secret_message.cant_read_this
-
-```
-cantreadthis --compression-algorithm bz2 secret_message
-```
-Will use the bz2 compression algorithm to process the data
-
-```
-cantreadthis ./secret_directory/
-```
-Will process the directory ./secret_directory/, putting any file inside it (will ignore symlinks) to a zipfile, and then treat the zipfile. 
-Will create a file called secret_directory_zipfile.cant_read_this
-```
-cantreadthis ./secret_directory_zipfile.cant_read_this
-```
-Will load the processed directory zipfile, then will extract the zipfile to the current directory
-
-### TODO plans
-In order of priority
-* Class behaving like a FileObject to interact with crt file directly
-* Improve Python class usability for usage inside other projects
-* Split processed file into smaller chunks (and reverse process)
-* Improve speed with Cython
-* Verifications of the tool security
-* Very simple GUI tool for non-cli users
-* Comment the code :-(
-* Use steganography to store the data inside an image (and reverse process)
-* Split file into smaller chunks inside a list of images by steganography (and reverse process)
-* Adding encryption choices
-* Multiprocessing on compression
-* Better benchmarking functions
