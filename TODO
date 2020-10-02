@@ -1,3 +1,4 @@
+- Checksum template inside the header, then replace with the checksum got from file processing
 - Add password verification inside header
 - Add secured header inside payload
 - Implement file name randomization

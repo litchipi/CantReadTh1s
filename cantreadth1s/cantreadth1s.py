@@ -312,6 +312,7 @@ class CantReadThis:
 
 
     def handle_directory(self, fname):
+        self.__set_password()
         fname = os.path.abspath(fname)
         self.params["header_misc_data"]["is_dir"] = True
         zip_root = os.path.abspath(os.path.curdir)
