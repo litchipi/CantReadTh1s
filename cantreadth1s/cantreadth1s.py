@@ -4,19 +4,16 @@
 import io
 import os
 import sys
-import bz2
+import zlib
 import time
 import math
 import json
-import lzma
-import zlib
+import string
 import base64
-import argon2
 import random
 import zipfile
 import getpass
 import hashlib
-import lz4.frame
 import traceback
 import multiprocessing as mproc
 
@@ -36,7 +33,7 @@ class CantReadThis:
             "info":VERSION,
             "header_misc_data":{},
             "fileobject":False,         #TODO
-            "rsize":(10*1024*1024),
+            "rsize":(512*1024),
             "security_level":1,
             "randomized_name":False,    #TODO
             "outfile":None,
@@ -174,11 +171,17 @@ class CantReadThis:
         ndata = (self.params["rsize"] * self.ncpu)
         fin.seek(datastart)
         finished = False
+        n = 0
         while not finished:
             data = fin.read(ndata)
-            finished = (len(data) <= ndata)
+            if self.params["debug"]:
+                print("l loop", n, len(data), ndata, len(data) < ndata, fin.tell())
+                n += 1
+            finished = (len(data) < ndata)
             dec_data = self.enc.decrypt(data)
             dcp_data = self.cmp.decompress(dec_data)
+            if finished:
+                dcp_data += self.cmp.dcp_finish()
             h.update(dcp_data)
             fout.write(dcp_data)
         return h.hexdigest()
@@ -194,7 +197,7 @@ class CantReadThis:
         while not finished:
             data = fin.read(ndata)
             if self.params["debug"]:
-                print("processing loop", n, len(data), ndata, len(data) < ndata)
+                print("p loop", n, len(data), ndata, len(data) < ndata, fin.tell())
                 n += 1
             h.update(data)
             finished = (len(data) < ndata)
