@@ -1,0 +1,6 @@
+- Add password verification inside header
+- Add secured header inside payload
+- Implement file name randomization
+- Implement fileobject behavior
+- Clean & optimise code
+- Implement multiprocessing
