@@ -35,12 +35,23 @@ class CompressionWrapper:
         if self.decompressor is None:
             return data
         else:
-            return self.decompressor.decompress(data)# + self.decompressor.flush()
+            return self.decompressor.decompress(data)
+
+    def dcp_finish(self):
+        if self.decompressor is None:
+            return "".encode()
+        try:
+            return self.decompressor.flush()
+        except:
+            return "".encode()
 
     def cmp_finish(self):
         if self.decompressor is None:
             return "".encode()
-        return self.compressor.flush()
+        try:
+            return self.compressor.flush()
+        except:
+            return "".encode()
 
 
 

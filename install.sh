@@ -2,7 +2,7 @@
 
 echo ""
 echo "[*] PIP requirements"
-pip3 install cryptography argon2 lz4
+pip3 install -U cryptography argon2 lz4
 
 echo ""
 echo "[*] Python lib install"

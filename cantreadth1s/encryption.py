@@ -13,18 +13,14 @@ class EncryptionWrapper:
         self.ncpu = ncpu
         self.cipher = Cipher(algorithms.AES(pwd), modes.OFB(base64.b64decode(self.iv)))
 
-    def pad(self, s):
-        return s + ((self.block_size - len(s) % self.block_size) * chr(self.block_size - len(s) % self.block_size)).encode()
-
-    def unpad(self, s):
-        return s[0:-s[-1]]
-
-    def encrypt(self, data):
+    def encrypt(self, data, n=0):
+        if (n == self.sec_level):
+            return data
         enc = self.cipher.encryptor()
-        return enc.update(data) + enc.finalize()
+        return self.encrypt(enc.update(data) + enc.finalize(), n=n+1)
 
-    def decrypt(self, data):
+    def decrypt(self, data, n=0):
+        if (n == self.sec_level):
+            return data
         dec = self.cipher.decryptor()
-        return dec.update(data) + dec.finalize()
-
-
+        return self.decrypt(dec.update(data) + dec.finalize(), n=n+1)
