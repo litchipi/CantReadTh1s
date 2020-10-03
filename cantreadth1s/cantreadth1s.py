@@ -8,8 +8,8 @@ import zlib
 import time
 import math
 import json
-import string
 import base64
+import string
 import random
 import zipfile
 import getpass
@@ -21,7 +21,7 @@ from .encryption import EncryptionWrapper
 from .compression import CompressionWrapper
 from .sec_tools import generate_argon2_opts, process_pwd
 
-VERSION = "0.6"
+VERSION = "0.6.1"
 CRT_FILE_EXTENSION = ".crt"
 
 def generate_random_fname(k=30):
@@ -77,7 +77,7 @@ class CantReadThis:
         return h.hexdigest()
 
     def generate_seed(self):
-        return hashlib.sha3_512(os.urandom(1024*self.params["security_level"])).hexdigest()[:(8*self.params["security_level"])]
+        return os.urandom(1024*self.params["security_level"])).hex()[:(8*self.params["security_level"])]
 
 ############# USEFULL MISC FUNCTIONS ################################
 
@@ -124,7 +124,7 @@ class CantReadThis:
         return self.preprocessed_pwd
 
     def __set_password(self):
-        if self.preprocessed_pwd is None:
+        if ((self.preprocessed_pwd is None) or (self.pwd_seed is None)):
             if "password" in self.params.keys():
                 pwd = self.params["password"]
             else:
@@ -341,17 +341,18 @@ class CantReadThis:
         except zlib.error:
             return False
 
-    def __dict_data_load(self, data, header):
+    def __dict_data_load(self, b85data, header):
+        data = base64.b85decode(b85data)
         cmpdata = self.enc.decrypt(data)
-        rawdata = self.cmp.decompress(cmpdata)
+        rawdata = self.cmp.decompress(cmpdata) + self.cmp.dcp_finish()
         result = json.loads(rawdata.decode())
         return hashlib.sha256(rawdata).hexdigest(), result
 
     def __dict_data_process(self, obj):
         rawdata = json.dumps(obj).encode()
-        cmpdata = self.cmp.compress(rawdata)
+        cmpdata = self.cmp.compress(rawdata) + self.cmp.cmp_finish()
         encdata = self.enc.encrypt(cmpdata)
-        return hashlib.sha256(rawdata).hexdigest(), encdata
+        return hashlib.sha256(rawdata).hexdigest(), base64.b85encode(encdata).decode()
 
     def __dict_load_crt(self, data, header):
         pwd = self.__get_password(header)
@@ -379,20 +380,27 @@ class CantReadThis:
             print("Done in " + self.display_time(time.time()-t))
         return True, {"__crt__":header, "__data__":result}
 
+    def is_processed_dict(self, obj):
+        return (type(obj) == dict) and all([el in obj.keys() for el in ["__crt__", "__data__"]])
+
     def handle_dict(self, obj):
-        processed = (type(obj) == dict) and all([el in obj.keys() for el in ["__crt__", "__data__"]])
+        processed = self.is_processed_dict(obj)
         try:
             if processed:
+                if self.params["debug"]:
+                    print(obj)
                 success, result = self.__dict_load_crt(obj.pop("__data__"), obj.pop("__crt__"))
                 obj.update(result)
-                return success, obj
+                assert success
+                return obj
             else:
-                return self.__dict_process_crt(obj)
+                success, result = self.__dict_process_crt(obj)
+                assert success
+                return result
         except Exception as err:
             if self.params["debug"]:
                 traceback.print_exc(file=sys.stdout)
-            return False, str(err)
-
+            return None
 
     def handle_file(self, flist):
         if type(flist) == str:

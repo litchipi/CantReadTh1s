@@ -1,4 +1,4 @@
-import lz4
+import lz4.frame
 import bz2
 import zlib
 import lzma
