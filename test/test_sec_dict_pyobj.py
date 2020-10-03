@@ -9,7 +9,7 @@ import json
 from cantreadth1s import CantReadThis
 
 DEBUG=False
-SEC_LEVEL = 50
+ALGORITHM = "lz4"
 PASSWORD = "azeifjazeofjalzekfjamzlekfjmalkefjmqlkxd,vmqcvnx;,cvnbperjgoizejé"
 DICT_TEST = {
         "key_list_int": [1, 3, 5, 7, 9],
@@ -29,12 +29,13 @@ DICT_TEST = {
             },
         }
 
-def main(algo):
-    print("\n\n\n" + algo)
-    print(str(DICT_TEST)[:50])
-    crt = CantReadThis(password=PASSWORD, debug=DEBUG, compression_algorithm=algo, security_level=SEC_LEVEL)
-    success, res = crt.handle_dict(DICT_TEST)
-    if not success:
+def main(sec_level):
+    print("\n\n\n" + str(sec_level))
+    print(str(DICT_TEST)[:80])
+    crt = CantReadThis(password=PASSWORD, debug=DEBUG, compression_algorithm=ALGORITHM, security_level=sec_level)
+    try:
+        res = crt.handle_dict(DICT_TEST)
+    except AssertionError:
         print("FAIL", res)
         return 1
     res["toto"] = "tata"
@@ -44,8 +45,9 @@ def main(algo):
     print(len(json.dumps(DICT_TEST)), " -> ", len(res["__data__"]))
     print("")
     crt2 = CantReadThis(password=PASSWORD, debug=DEBUG)
-    success, load = crt2.handle_dict(res)
-    if not success:
+    try:
+        load = crt2.handle_dict(res)
+    except AssertionError:
         print("FAIL", load)
         return 1
     print(load)
@@ -54,7 +56,7 @@ def main(algo):
 
 if __name__ == "__main__":
     os.system("clear")
-    for algo in ["lzma", "bz2", "zlib", "lz4", "none"]:
-        ret = main(algo)
+    for sec in range(1, 100, 5):
+        ret = main(sec)
         if ret != 0:
             sys.exit(ret)

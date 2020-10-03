@@ -77,7 +77,7 @@ class CantReadThis:
         return h.hexdigest()
 
     def generate_seed(self):
-        return os.urandom(1024*self.params["security_level"])).hex()[:(8*self.params["security_level"])]
+        return os.urandom(8*self.params["security_level"]).hex()[:(2*self.params["security_level"])]
 
 ############# USEFULL MISC FUNCTIONS ################################
 
