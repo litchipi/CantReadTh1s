@@ -54,7 +54,7 @@ class CantReadThis:
                 self.params["rsize"]-(self.params["rsize"]%EncryptionWrapper.block_size))
 
 
-        self.ncpu = mproc.cpu_count()
+        self.ncpu = 1#mproc.cpu_count()
         self.preprocessed_pwd = None
         self.pwd_seed = None
 
@@ -77,7 +77,7 @@ class CantReadThis:
         return h.hexdigest()
 
     def generate_seed(self):
-        return os.urandom(8*self.params["security_level"]).hex()[:(2*self.params["security_level"])]
+        return os.urandom(4 + self.params["security_level"]).hex()
 
 ############# USEFULL MISC FUNCTIONS ################################
 
@@ -179,6 +179,8 @@ class CantReadThis:
                 n += 1
             finished = (len(data) < ndata)
             dec_data = self.enc.decrypt(data)
+            if finished:
+                dec_data += self.enc.dec_finish()
             dcp_data = self.cmp.decompress(dec_data)
             if finished:
                 dcp_data += self.cmp.dcp_finish()
@@ -205,6 +207,8 @@ class CantReadThis:
             if finished:
                 cmp_data += self.cmp.cmp_finish()
             enc_data = self.enc.encrypt(cmp_data)
+            if finished:
+                enc_data += self.enc.enc_finish()
             if self.params["debug"]:
                 h2.update(enc_data)
             fout.write(enc_data)
@@ -241,7 +245,7 @@ class CantReadThis:
         else:
             out = open(out_fname, "w+b")
         try:
-            self.enc = EncryptionWrapper(self.ncpu, pwd, header["s"], iv=header["v"])
+            self.enc = EncryptionWrapper(self.ncpu, pwd, iv=header["v"])
             self.cmp = CompressionWrapper(self.ncpu, int(header["c"]))
             with open(fname, "rb") as dataf:
                 checksum = self.__data_load(dataf, out, header, datastart)
@@ -292,7 +296,7 @@ class CantReadThis:
         else:
             outf = open(outfname, "w+b")
         try:
-            self.enc = EncryptionWrapper(self.ncpu, pwd, self.params["security_level"])
+            self.enc = EncryptionWrapper(self.ncpu, pwd)
             self.cmp = CompressionWrapper(self.ncpu, CompressionWrapper.COMPRESSION_ALGORITHMS_AVAILABLE.index(self.params["compression_algorithm"]))
             with open(fname, "rb") as dataf:
                 checksum_exp = self.compute_hash_dataf(dataf)
@@ -332,8 +336,12 @@ class CantReadThis:
         return res
 
     def test_processed(self, dataf):
+        dataf.seek(0, 2)
+        fsize = dataf.tell()
         dataf.seek(0)
         headerlen = int.from_bytes(dataf.read(4), "big", signed=False)
+        if (headerlen >= fsize):
+            return False
         header_bin = dataf.read(headerlen)
         try:
             self.decompress_header(header_bin)
@@ -358,7 +366,7 @@ class CantReadThis:
         pwd = self.__get_password(header)
         t = time.time()
 
-        self.enc = EncryptionWrapper(self.ncpu, pwd, header["s"], iv=header["v"])
+        self.enc = EncryptionWrapper(self.ncpu, pwd, iv=header["v"])
         self.cmp = CompressionWrapper(self.ncpu, int(header["c"]))
         checksum, result = self.__dict_data_load(data, header)
         self.verify_checksum(checksum, header["h"])
@@ -371,7 +379,7 @@ class CantReadThis:
         pwd = self.__set_password()
         t = time.time()
 
-        self.enc = EncryptionWrapper(self.ncpu, pwd, self.params["security_level"])
+        self.enc = EncryptionWrapper(self.ncpu, pwd)
         self.cmp = CompressionWrapper(self.ncpu,
                 CompressionWrapper.COMPRESSION_ALGORITHMS_AVAILABLE.index(self.params["compression_algorithm"]))
         checksum, result = self.__dict_data_process(data)

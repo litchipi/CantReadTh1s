@@ -5,22 +5,27 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 class EncryptionWrapper:
     block_size = algorithms.AES.block_size
-    def __init__(self, ncpu, pwd, sec_level, iv=None):
+    def __init__(self, ncpu, pwd, iv=None):
         if iv is None:
             iv = base64.b85encode(os.urandom(self.block_size//8)).decode()
         self.iv = iv
-        self.sec_level = sec_level
         self.ncpu = ncpu
-        self.cipher = Cipher(algorithms.AES(pwd), modes.OFB(base64.b85decode(self.iv)))
+        self.algo = algorithms.AES(pwd)
+        self.cipher = Cipher(self.algo, modes.CFB(base64.b85decode(self.iv)))
+        self.init_enc_dec()
 
-    def encrypt(self, data, n=0):
-        if (n == self.sec_level):
-            return data
-        enc = self.cipher.encryptor()
-        return self.encrypt(enc.update(data) + enc.finalize(), n=n+1)
+    def init_enc_dec(self):
+        self.enc = self.cipher.encryptor()
+        self.dec = self.cipher.decryptor()
 
-    def decrypt(self, data, n=0):
-        if (n == self.sec_level):
-            return data
-        dec = self.cipher.decryptor()
-        return self.decrypt(dec.update(data) + dec.finalize(), n=n+1)
+    def encrypt(self, data):
+        return self.enc.update(data)
+
+    def decrypt(self, data):
+        return self.dec.update(data)
+
+    def enc_finish(self):
+        return self.enc.finalize()
+
+    def dec_finish(self):
+        return self.dec.finalize()

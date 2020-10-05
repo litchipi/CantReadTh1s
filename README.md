@@ -26,7 +26,6 @@ Uses:
 ## Security level
 The security level is by default 1. It acts on the process as:
 - Argon2 options are increased in value (except parallel), resulting in more time needed to compute password derived key
-- Multiple passes in AES encryption
 - A longer seed used for password derivation
 
 There is no theoric limit to the security level.
@@ -58,6 +57,7 @@ cantreadth1s --help
 You are welcome if you want to help
 - Secured metadata inside the encrypted payload
 - Randomized output filenames (with filename restoration on load)
+- Multiple passes through AES (scaling with security level value)
 - FileObject behavior on Python (supporting open, close, write and read)
 - multiprocessing for compression / encryption
 - file division in multiple parts

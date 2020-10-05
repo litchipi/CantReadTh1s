@@ -64,13 +64,16 @@ class LZ4Wrapper:
         else:
             #self.obj = lz4.stream.LZ4StreamDecompressor(strat, buffsize)
             self.obj = lz4.frame.LZ4FrameDecompressor()
+
     def compress(self, data):
         if not self.beginned:
             self.beginned = True
             return self.obj.begin() + self.obj.compress(data)
         return self.obj.compress(data)
+
     def decompress(self, data):
         return self.obj.decompress(data)
+
     def flush(self):
         return self.obj.flush()
 
