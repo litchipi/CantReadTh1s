@@ -20,7 +20,7 @@ Can be imported inside a Python code to be used to create processed files from i
 Uses:
     sha256 for checksum
     argon2 for key derivation
-    AES OFB for encryption
+    AES CFB for encryption
     zlib for compression    (also available: lzma, bz2, lz4 or no compression)
 
 ## Security level

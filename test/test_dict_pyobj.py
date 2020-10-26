@@ -34,6 +34,8 @@ def main(algo):
     crt = CantReadThis(password=PASSWORD, debug=DEBUG, compression_algorithm=algo)
     try:
         res = crt.handle_dict(DICT_TEST)
+        print("RES", res)
+        assert (res is not None)
     except AssertionError:
         print("FAIL", res)
         return 1
@@ -47,6 +49,7 @@ def main(algo):
     crt2 = CantReadThis(password=PASSWORD, debug=DEBUG)
     try:
         load = crt2.handle_dict(res)
+        assert (load is not None)
     except AssertionError:
         print("FAIL", load)
         return 1

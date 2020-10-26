@@ -351,7 +351,7 @@ class CantReadThis:
 
     def __dict_data_load(self, b85data, header):
         data = base64.b85decode(b85data)
-        cmpdata = self.enc.decrypt(data)
+        cmpdata = self.enc.decrypt(data) + self.enc.dec_finish()
         rawdata = self.cmp.decompress(cmpdata) + self.cmp.dcp_finish()
         result = json.loads(rawdata.decode())
         return hashlib.sha256(rawdata).hexdigest(), result
@@ -359,7 +359,7 @@ class CantReadThis:
     def __dict_data_process(self, obj):
         rawdata = json.dumps(obj).encode()
         cmpdata = self.cmp.compress(rawdata) + self.cmp.cmp_finish()
-        encdata = self.enc.encrypt(cmpdata)
+        encdata = self.enc.encrypt(cmpdata) + self.enc.enc_finish()
         return hashlib.sha256(rawdata).hexdigest(), base64.b85encode(encdata).decode()
 
     def __dict_load_crt(self, data, header):
