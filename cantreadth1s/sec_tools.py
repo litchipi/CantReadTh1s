@@ -11,7 +11,12 @@ def generate_argon2_opts(level):
     return {k:int(ARGON2_MIN_CONF[k] + ((level-1)*ARGON2_INCREASE[k])) for k in ARGON2_MIN_CONF.keys()}
 
 def derive_key(key, name, keylength=256, **argon2_cfg):
-    return base64.b85encode(argon2.argon2_hash(name, salt=key, buflen=keylength, **argon2_cfg)).decode()
+    hashlib.sha1("to".encode()).digest()
+    return base64.b85encode(argon2.argon2_hash(
+            hashlib.sha1(name.encode()).digest(),
+            salt=hashlib.sha1(key.encode()).digest(),
+            buflen=keylength,
+            **argon2_cfg)).decode()
 
 def process_pwd(pwd, opt, seed):
     return hashlib.sha3_256(argon2.argon2_hash(seed,
