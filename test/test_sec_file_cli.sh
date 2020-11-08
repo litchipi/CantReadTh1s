@@ -1,9 +1,12 @@
 #!/bin/bash
 
 DEBUG= #"-D"
-OPTS="$DEBUG -p tata -v -s 50"
+SECLEVEL=50
+OPTS="$DEBUG -p tata -v -s $SECLEVEL"
 
 clear
+
+echo "Testing with a security level of $SECLEVEL"
 
 for cmp in lzma bz2 zlib lz4 none
 do

@@ -4,8 +4,7 @@ DEBUG= #"-D"
 OPTS="$DEBUG -p tata -v"
 
 echo "[*] Generating large file to process ..."
-#:find /usr/ > ./testfile
-dmesg > ./testfile
+ls -lhaR $HOME > ./testfile
 
 clear
 

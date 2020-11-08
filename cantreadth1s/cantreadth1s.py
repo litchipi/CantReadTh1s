@@ -40,7 +40,8 @@ class CantReadThis:
             "debug":False,
             "verbose":False,
             "return_data":False,
-            "argon2_params":None
+            "argon2_params":None,
+            "dict_to_binary":False,
             }
 
     def __init__(self, **kwparams):
@@ -134,6 +135,14 @@ class CantReadThis:
                     self.params["argon2_params"],
                     self.pwd_seed)
         return self.preprocessed_pwd
+
+    def __extract_header_from_bin(self, obj):
+        headerlen = int.from_bytes(obj[:4], "big", signed=False)
+        header_bin = obj[4:(headerlen+4)]
+        try:
+            return self.decompress_header(header_bin), 4+headerlen
+        except zlib.error:
+            return None, None
 
     def __extract_header(self, fname):
         with open(fname, "rb") as dataf:
@@ -349,8 +358,9 @@ class CantReadThis:
         except zlib.error:
             return False
 
-    def __dict_data_load(self, b85data, header):
-        data = base64.b85decode(b85data)
+    def __dict_data_load(self, data, header, decoded=False):
+        if not decoded:
+            data = base64.b85decode(data)
         cmpdata = self.enc.decrypt(data) + self.enc.dec_finish()
         rawdata = self.cmp.decompress(cmpdata) + self.cmp.dcp_finish()
         result = json.loads(rawdata.decode())
@@ -360,7 +370,11 @@ class CantReadThis:
         rawdata = json.dumps(obj).encode()
         cmpdata = self.cmp.compress(rawdata) + self.cmp.cmp_finish()
         encdata = self.enc.encrypt(cmpdata) + self.enc.enc_finish()
-        return hashlib.sha256(rawdata).hexdigest(), base64.b85encode(encdata).decode()
+        checksum = hashlib.sha256(rawdata).hexdigest()
+        if self.params["dict_to_binary"]:
+            return checksum, encdata
+        else:
+            return checksum, base64.b85encode(encdata).decode()
 
     def __dict_load_crt(self, data, header):
         pwd = self.__get_password(header)
@@ -383,30 +397,53 @@ class CantReadThis:
         self.cmp = CompressionWrapper(self.ncpu,
                 CompressionWrapper.COMPRESSION_ALGORITHMS_AVAILABLE.index(self.params["compression_algorithm"]))
         checksum, result = self.__dict_data_process(data)
-        header = self.__create_header_dict(checksum)
-        if self.params["verbose"]:
-            print("Done in " + self.display_time(time.time()-t))
-        return True, {"__crt__":header, "__data__":result}
+        if self.params["dict_to_binary"]:
+            header = self.__create_header_bin(checksum)
+            return True, header + result
+        else:
+            header = self.__create_header_dict(checksum)
+            return True, {"__crt__":header, "__data__":result}
 
     def is_processed_dict(self, obj):
         return (type(obj) == dict) and all([el in obj.keys() for el in ["__crt__", "__data__"]])
+
+    def handle_dict_from_binary(self, obj):
+        try:
+            header, datastart = self.__extract_header_from_bin(obj)
+            if header is None:
+                raise Exception("Cannot recover header")
+            pwd = self.__get_password(header)
+
+            self.enc = EncryptionWrapper(self.ncpu, pwd, iv=header["v"])
+            self.cmp = CompressionWrapper(self.ncpu, int(header["c"]))
+            checksum, result = self.__dict_data_load(obj[datastart:], header, decoded=True)
+            self.verify_checksum(checksum, header["h"])
+            return result
+        except Exception as err:
+            if self.params["debug"]:
+                print("Exception occured", err)
+                traceback.print_exc(file=sys.stdout)
+            return None
 
     def handle_dict(self, obj):
         processed = self.is_processed_dict(obj)
         try:
             if processed:
                 if self.params["debug"]:
-                    print(obj)
+                    print("processed", obj)
                 success, result = self.__dict_load_crt(obj.pop("__data__"), obj.pop("__crt__"))
                 obj.update(result)
                 assert success
                 return obj
             else:
+                if self.params["debug"]:
+                    print("Not processed")
                 success, result = self.__dict_process_crt(obj)
                 assert success
                 return result
         except Exception as err:
             if self.params["debug"]:
+                print("Exception happened", err)
                 traceback.print_exc(file=sys.stdout)
             return None
 

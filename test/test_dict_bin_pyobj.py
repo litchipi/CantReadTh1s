@@ -8,7 +8,7 @@ import random, string
 import json
 from cantreadth1s import CantReadThis
 
-DEBUG=True
+DEBUG=True#False
 PASSWORD = "azeifjazeofjalzekfjamzlekfjmalkefjmqlkxd,vmqcvnx;,cvnbperjgoizejé"
 DICT_TEST = {
         "key_list_int": [1, 3, 5, 7, 9],
@@ -30,29 +30,24 @@ DICT_TEST = {
 
 def main(algo):
     print("\n\n\n" + algo)
-    crt = CantReadThis(password=PASSWORD, debug=DEBUG, compression_algorithm=algo)
+    print(str(DICT_TEST)[:50])
+    crt = CantReadThis(password=PASSWORD, debug=DEBUG, compression_algorithm=algo, dict_to_binary=True)
     try:
         res = crt.handle_dict(DICT_TEST)
         print("RES", res)
-        assert (res is not None)
+        assert (res is not None) and (type(res) == bytes)
     except AssertionError:
-        print("FAIL", res)
+        print("\nFAIL\n", res)
         return 1
-    res["toto"] = "tata"
-    print("")
-    print(list(res.keys()))
-    print(str(res["__crt__"]))
-    print(len(res["__data__"]), res["__data__"][:50])
-    print(len(json.dumps(DICT_TEST)), " -> ", len(res["__data__"]))
-    print("")
     crt2 = CantReadThis(password=PASSWORD, debug=DEBUG)
     try:
-        load = crt2.handle_dict(res)
+        load = crt2.handle_dict_from_binary(res)
         assert (load is not None)
     except AssertionError:
-        print("FAIL", load)
+        print("\nFAIL\n", load)
         return 1
     print(load)
+    assert (load == DICT_TEST)
     print("Success")
     return 0
 
