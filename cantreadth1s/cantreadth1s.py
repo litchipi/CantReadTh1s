@@ -19,7 +19,7 @@ import multiprocessing as mproc
 
 from .encryption import EncryptionWrapper
 from .compression import CompressionWrapper
-from .sec_tools import generate_argon2_opts, process_pwd
+from .sec_tools import generate_argon2_opts, process_pwd, test_header_password
 from .exceptions import BadPasswordException
 
 VERSION = "0.6.2"
@@ -127,8 +127,7 @@ class CantReadThis:
                 pwd = getpass.getpass("Password: ")
             self.preprocessed_pwd = process_pwd(pwd, header["a"], header["g"])
             if "t" in header.keys():        #Compatibility 0.6.1
-                key_challenge = process_pwd(self.preprocessed_pwd, header["a"], header["g"]).hex()[:16]
-                if (key_challenge != header["t"]):
+                if not test_header_password(header, self.preprocessed_pwd):
                     if "password" in self.params.keys():
                         raise BadPasswordException("Wrong password")
                     elif (tries < self.params["max_password_tries"]):

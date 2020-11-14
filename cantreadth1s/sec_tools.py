@@ -27,3 +27,5 @@ def process_pwd(pwd, opt, seed):
                 hashlib.sha256(convert_bytes(pwd)).digest(),
                 t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])).digest()
 
+def test_header_password(header, password):
+    return process_pwd(password, header["a"], header["g"]).hex()[:16]
