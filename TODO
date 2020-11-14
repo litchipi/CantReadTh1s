@@ -1,7 +1,9 @@
+BUGS
+- Display only option doesn't work anymore
+
 IMPROVEMENTS
 - Bundle a CRT decryptor inside the payload so it can be loaded even from older versions
 - Checksum template inside the header, then replace with the checksum got from file processing
-- Add password verification inside header
 - Add secured header inside payload
 - Implement file name randomization
 - Implement fileobject behavior

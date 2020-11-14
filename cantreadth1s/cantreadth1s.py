@@ -20,8 +20,9 @@ import multiprocessing as mproc
 from .encryption import EncryptionWrapper
 from .compression import CompressionWrapper
 from .sec_tools import generate_argon2_opts, process_pwd
+from .exceptions import BadPasswordException
 
-VERSION = "0.6.1"
+VERSION = "0.6.2"
 CRT_FILE_EXTENSION = ".crt"
 
 def generate_random_fname(k=30):
@@ -42,6 +43,7 @@ class CantReadThis:
             "return_data":False,
             "argon2_params":None,
             "dict_to_binary":False,
+            "max_password_tries":5,
             }
 
     def __init__(self, **kwparams):
@@ -115,13 +117,26 @@ class CantReadThis:
         res += str(round(nsecs, prec)) + " secs"
         return res
 
-    def __get_password(self, header):
+    def __get_password(self, header, tries=1):
         if self.preprocessed_pwd is None:
             if "password" in self.params.keys():
                 pwd = self.params["password"]
             else:
+                if self.params["debug"]:
+                    print("Nb tries: {}/{}".format(tries, self.params["max_password_tries"]))
                 pwd = getpass.getpass("Password: ")
             self.preprocessed_pwd = process_pwd(pwd, header["a"], header["g"])
+            if "t" in header.keys():        #Compatibility 0.6.1
+                key_challenge = process_pwd(self.preprocessed_pwd, header["a"], header["g"]).hex()[:16]
+                if (key_challenge != header["t"]):
+                    if "password" in self.params.keys():
+                        raise BadPasswordException("Wrong password")
+                    elif (tries < self.params["max_password_tries"]):
+                        print("Wrong password")
+                        self.preprocessed_pwd = None
+                        return self.__get_password(header, tries=(tries+1))
+                    else:
+                        raise BadPasswordException("Wrong password (too many retries)")
         return self.preprocessed_pwd
 
     def __set_password(self):
@@ -134,6 +149,9 @@ class CantReadThis:
             self.preprocessed_pwd = process_pwd(pwd,
                     self.params["argon2_params"],
                     self.pwd_seed)
+            self.key_test_challenge = process_pwd(self.preprocessed_pwd,
+                    self.params["argon2_params"],
+                    self.pwd_seed).hex()[:16]
         return self.preprocessed_pwd
 
     def __extract_header_from_bin(self, obj):
@@ -282,6 +300,7 @@ class CantReadThis:
                 "i":self.params["info"].replace(" ", "_"),
                 "s":self.params["security_level"],
                 "c":CompressionWrapper.COMPRESSION_ALGORITHMS_AVAILABLE.index(self.params["compression_algorithm"]),
+                "t":self.key_test_challenge
                 }
         if len(self.params["header_misc_data"]) > 0:
             header["m"] = dict.copy(self.params["header_misc_data"])
