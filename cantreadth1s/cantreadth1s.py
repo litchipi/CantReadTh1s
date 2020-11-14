@@ -446,25 +446,17 @@ class CantReadThis:
 
     def handle_dict(self, obj):
         processed = self.is_processed_dict(obj)
-        try:
-            if processed:
-                if self.params["debug"]:
-                    print("processed", obj)
-                success, result = self.__dict_load_crt(obj.pop("__data__"), obj.pop("__crt__"))
-                obj.update(result)
-                assert success
-                return obj
-            else:
-                if self.params["debug"]:
-                    print("Not processed")
-                success, result = self.__dict_process_crt(obj)
-                assert success
-                return result
-        except Exception as err:
+        if processed:
             if self.params["debug"]:
-                print("Exception happened", err)
-                traceback.print_exc(file=sys.stdout)
-            return None
+                print("processed", obj)
+            success, result = self.__dict_load_crt(obj.pop("__data__"), obj.pop("__crt__"))
+            obj.update(result)
+            return obj
+        else:
+            if self.params["debug"]:
+                print("Not processed")
+            success, result = self.__dict_process_crt(obj)
+            return result
 
     def handle_file(self, flist):
         if type(flist) == str:

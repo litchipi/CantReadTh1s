@@ -6,10 +6,12 @@ import sys
 import time
 import random, string
 import json
-from cantreadth1s import CantReadThis
+from cantreadth1s import CantReadThis, BadPasswordException
 
 DEBUG=False#True
-PASSWORD = "azeifjazeofjalzekfjamzlekfjmalkefjmqlkxd,vmqcvnx;,cvnbperjgoizejé"
+GOOD_PASSWORD = "azeifjazeofjalzekfjamzlekfjmalkefjmqlkxd,vmqcvnx;,cvnbperjgoizejé"
+BAD_PASSWORD = "lakefjlkazejflkazjel"
+
 DICT_TEST = {
         "key_list_int": [1, 3, 5, 7, 9],
         "key_list_str": ["tata", "toto", "tointoin", "tutu"],
@@ -29,31 +31,23 @@ DICT_TEST = {
         }
 
 def main(algo):
-    print("\n\n\n" + algo)
-    crt = CantReadThis(password=PASSWORD, debug=DEBUG, compression_algorithm=algo)
+    print("\n\n" + algo)
+    crt = CantReadThis(password=GOOD_PASSWORD, debug=DEBUG, compression_algorithm=algo)
     try:
         res = crt.handle_dict(DICT_TEST)
-        print("RES", res)
         assert (res is not None)
     except AssertionError:
         print("FAIL", res)
         return 1
     res["toto"] = "tata"
-    print("")
-    print(list(res.keys()))
-    print(str(res["__crt__"]))
-    print(len(res["__data__"]), res["__data__"][:50])
-    print(len(json.dumps(DICT_TEST)), " -> ", len(res["__data__"]))
-    print("")
-    crt2 = CantReadThis(password=PASSWORD, debug=DEBUG)
+    crt2 = CantReadThis(password=BAD_PASSWORD, debug=DEBUG)
     try:
         load = crt2.handle_dict(res)
-        assert (load is not None)
-    except AssertionError:
-        print("FAIL", load)
+        print(load)
+        print("FAIL")
         return 1
-    print(load)
-    print("Success")
+    except BadPasswordException:
+        print("Success")
     return 0
 
 if __name__ == "__main__":
