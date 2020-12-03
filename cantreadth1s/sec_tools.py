@@ -28,4 +28,7 @@ def process_pwd(pwd, opt, seed):
                 t=opt["t"], m=opt["m"], p=opt["p"], buflen=opt["l"])).digest()
 
 def test_header_password(header, password):
-    return process_pwd(password, header["a"], header["g"]).hex()[:16]
+    return header["t"] == create_key_test_challenge(password, header["a"], header["g"])
+
+def create_key_test_challenge(key, argon2_params, seed):
+    return process_pwd(key, argon2_params, seed).hex()[:16]

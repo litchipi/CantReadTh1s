@@ -19,7 +19,7 @@ import multiprocessing as mproc
 
 from .encryption import EncryptionWrapper
 from .compression import CompressionWrapper
-from .sec_tools import generate_argon2_opts, process_pwd, test_header_password
+from .sec_tools import generate_argon2_opts, process_pwd, test_header_password, create_key_test_challenge
 from .exceptions import BadPasswordException
 
 VERSION = "0.6.2"
@@ -148,9 +148,8 @@ class CantReadThis:
             self.preprocessed_pwd = process_pwd(pwd,
                     self.params["argon2_params"],
                     self.pwd_seed)
-            self.key_test_challenge = process_pwd(self.preprocessed_pwd,
-                    self.params["argon2_params"],
-                    self.pwd_seed).hex()[:16]
+            self.key_test_challenge = create_key_test_challenge(self.preprocessed_pwd, self.params["argon2_params"], self.pwd_seed)
+
         return self.preprocessed_pwd
 
     def __extract_header_from_bin(self, obj):
