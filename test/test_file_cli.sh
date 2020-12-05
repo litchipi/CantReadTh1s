@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DEBUG="-D"
+DEBUG= #"-D"
 OPTS="$DEBUG -p tata -v"
 
 clear

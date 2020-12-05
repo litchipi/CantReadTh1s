@@ -22,7 +22,7 @@ from .compression import CompressionWrapper
 from .sec_tools import generate_argon2_opts, process_pwd, test_header_password, create_key_test_challenge
 from .exceptions import BadPasswordException
 
-VERSION = "0.6.2"
+VERSION = "0.6.3"
 CRT_FILE_EXTENSION = ".crt"
 
 def generate_random_fname(k=30):
@@ -400,25 +400,40 @@ class CantReadThis:
         self.enc = EncryptionWrapper(self.ncpu, pwd, iv=header["v"])
         self.cmp = CompressionWrapper(self.ncpu, int(header["c"]))
         checksum, result = self.__dict_data_load(data, header)
-        self.verify_checksum(checksum, header["h"])
+        if "h" in header.keys():
+            self.verify_checksum(checksum, header["h"])
         if self.params["verbose"]:
             print("Done in " + self.display_time(time.time()-t))
         return True, result
 
 
-    def __dict_process_crt(self, data):
-        pwd = self.__set_password()
-        t = time.time()
-
-        self.enc = EncryptionWrapper(self.ncpu, pwd)
-        self.cmp = CompressionWrapper(self.ncpu,
+    def __dict_process_crt(self, data, reuse_header=None, nohash=False):
+        if reuse_header is not None:
+            pwd = self.__get_password(reuse_header)
+            self.enc = EncryptionWrapper(self.ncpu, pwd, iv=reuse_header["v"])
+            self.cmp = CompressionWrapper(self.ncpu, int(reuse_header["c"]))
+        else:
+            pwd = self.__set_password()
+            self.enc = EncryptionWrapper(self.ncpu, pwd)
+            self.cmp = CompressionWrapper(self.ncpu,
                 CompressionWrapper.COMPRESSION_ALGORITHMS_AVAILABLE.index(self.params["compression_algorithm"]))
+
+        t = time.time()
         checksum, result = self.__dict_data_process(data)
         if self.params["dict_to_binary"]:
             header = self.__create_header_bin(checksum)
+            if nohash:
+                del header["h"]
             return True, header + result
+        elif reuse_header is not None:
+            if not nohash:
+                return True, {"__crt__":{"h":checksum}, "__data__":result}
+            else:
+                return True, {"__data__":result}
         else:
             header = self.__create_header_dict(checksum)
+            if nohash:
+                del header["h"]
             return True, {"__crt__":header, "__data__":result}
 
     def is_processed_dict(self, obj):
@@ -442,18 +457,26 @@ class CantReadThis:
                 traceback.print_exc(file=sys.stdout)
             return None
 
-    def handle_dict(self, obj):
+    def handle_dict(self, obj, reuse_header=None, nohash=False):
         processed = self.is_processed_dict(obj)
-        if processed:
+        if processed or ((reuse_header is not None) and ("__data__" in obj.keys())):
             if self.params["debug"]:
                 print("processed", obj)
-            success, result = self.__dict_load_crt(obj.pop("__data__"), obj.pop("__crt__"))
+
+            if reuse_header is not None:
+                header = dict.copy(reuse_header)
+                if "__crt__" in obj.keys() and ("h" in obj["__crt__"].keys()):
+                    header["h"] = obj.pop("__crt__")["h"]
+            else:
+                header = obj.pop("__crt__")
+
+            success, result = self.__dict_load_crt(obj.pop("__data__"), header)
             obj.update(result)
             return obj
         else:
             if self.params["debug"]:
                 print("Not processed")
-            success, result = self.__dict_process_crt(obj)
+            success, result = self.__dict_process_crt(obj, reuse_header=reuse_header, nohash=nohash)
             return result
 
     def handle_file(self, flist):
